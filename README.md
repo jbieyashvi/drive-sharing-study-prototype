@@ -72,7 +72,7 @@ One participant found Version A long and suggested putting a restrict action in 
 
 ## Scenario 2: restore access to one private file
 
-Facilitator-only. Open http://localhost:5317/?mode=facilitator&scenario=restore, or choose **Scenario → Restore access to one private file** in the facilitator drawer. If a share flow is open, the drawer asks before switching and discarding its unapplied choices. Switching restarts both versions (A and B) from that scenario. Without `scenario=restore` the original restrict task loads.
+Facilitator-only, for isolated testing. The same Add people flow also works on any file in the restrict scenario, including File A after it has been restricted. Open http://localhost:5317/?mode=facilitator&scenario=restore, or choose **Scenario → Restore access to one private file** in the facilitator drawer. If a share flow is open, the drawer asks before switching and discarding its unapplied choices. Switching restarts both versions (A and B) from that scenario. Without `scenario=restore` the original restrict task loads.
 
 `Client Project` holds **File B.png** and the limited-access folder **Private files**, which holds **File A.png** and **File C.png**:
 
@@ -130,7 +130,7 @@ Access works as follows. An item's access is the most permissive grant found by 
 
 - There are two scenarios (restrict one file, restore one private file). There are no groups, link sharing, domain or Workspace admin policies, or ownership transfer.
 - Changing an existing person's role (Viewer ↔ Editor) is not implemented. Only **Remove access** works, plus **Restrict access to this file…** in Version B.
-- **Add people** works only in the restore scenario, for one study person at a time and for files only. In the restrict scenario it still shows *Not available in this prototype*. Folder sharing is never available. Versions A and B use the same restore flow.
+- **Add people** works for any file in both scenarios and both versions, one study person at a time. For example, after restricting File A you can share File A back with Alex, and the new limited-access folder stays blocked. Folder sharing is never available.
 - *Copy file link* copies a placeholder `https://example.com/study-file/…` URL. It isn't a working link.
 - Version B has not been tested with participants. Comparing A and B needs a proper study, and step or click counts alone don't measure usability.
 - Moving into an *existing* limited-access folder is always unavailable, even after one has been created.

@@ -1004,7 +1004,6 @@ export default function App() {
           onFailureUsed={() => failureMode === 'next' && setFailureMode('off')}
           onCommit={(s) => setScenarios((prev) => ({ ...prev, [flow.variant]: s }))}
           variant={flow.variant}
-          addPeople={scenarioId === 'restore'}
           onUnavailable={unavailable}
           onNotice={notice}
           onClose={(to) => {

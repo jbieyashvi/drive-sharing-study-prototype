@@ -77,8 +77,6 @@ interface Props {
   onUnavailable: (what: string) => void
   /** Shows a short toast. */
   onNotice: (text: string) => void
-  /** Restoration scenario: "Add people" shares this one file with a study account. */
-  addPeople: boolean
   log: LogFn
   variant: Variant
 }
@@ -111,7 +109,6 @@ export function ShareFlow({
   onClose,
   onUnavailable,
   onNotice,
-  addPeople,
   log,
   variant,
 }: Props) {
@@ -333,10 +330,14 @@ export function ShareFlow({
     }, APPLY_DELAY_MS)
   }
 
-  // ---- Add people (restoration scenario) ----
+  // ---- Add people (direct file sharing) ----
   const parent = getItem(scenario, fileParentId)
   const parentLimited = isLimited(parent)
-  const scopeText = `This shares ${short} only. It does not share the ${parent.name} folder or the other files inside it.`
+  const siblingCount = children(scenario, parent.id).length - 1
+  const siblingsText = siblingCount > 1 ? 'the other files' : 'the other file'
+  const scopeText = `This shares ${short} only. It does not share the ${parent.name} folder${
+    siblingCount > 0 ? ` or ${siblingsText} inside it` : ''
+  }.`
   const recipientName = recipient ? personName(recipient) : ''
   const existing = recipient ? access(scenario, fileId, recipient) : null
   const q = query.trim().toLowerCase()
@@ -592,12 +593,7 @@ export function ShareFlow({
                 </span>
               </div>
             )}
-            <button
-              type="button"
-              className="add-people"
-              data-autofocus={backFromAdd || undefined}
-              onClick={addPeople ? startAdd : () => onUnavailable('Adding people')}
-            >
+            <button type="button" className="add-people" data-autofocus={backFromAdd || undefined} onClick={startAdd}>
               Add people, groups, spaces, and calendar events
             </button>
             <h3 className="section-label">People with access</h3>
@@ -836,9 +832,9 @@ export function ShareFlow({
                 <p className="muted">
                   {recipientName} will be able to open {short} from its link as {shareRole}
                   {parentLimited && !canOpen(scenario, parent.id, recipient)
-                    ? `, but still won’t be able to open the ${parent.name} folder or ${
-                        children(scenario, parent.id).length > 2 ? 'the other files' : 'the other file'
-                      } in it.`
+                    ? `, but still won’t be able to open the ${parent.name} folder${
+                        siblingCount > 0 ? ` or ${siblingsText} in it` : ''
+                      }.`
                     : '.'}
                 </p>
               )}
@@ -1446,7 +1442,7 @@ export function ShareFlow({
       const { before, after } = outcome
       if (outcome.branch === 'share' && recipient) {
         const role = roleOf(after, fileId, recipient)
-        // Everything except the recipient's File C cell must match the starting state.
+        // Everything except the recipient's cell for this file must match the starting state.
         const restUnchanged = PEOPLE.every((p) =>
           before.items.every(
             (i) => (i.id === fileId && p.id === recipient) || roleOf(before, i.id, p.id) === roleOf(after, i.id, p.id),
@@ -1473,7 +1469,9 @@ export function ShareFlow({
               {restUnchanged && (
                 <p>
                   {parentLimited
-                    ? 'Other private files and folder access were not changed.'
+                    ? siblingCount > 0
+                      ? 'Other private files and folder access were not changed.'
+                      : `Access to the ${parent.name} folder was not changed.`
                     : 'Access to other files and folders was not changed.'}
                 </p>
               )}

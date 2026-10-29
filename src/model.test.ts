@@ -148,3 +148,36 @@ describe('restoration scenario: direct file access with a blocked parent', () =>
     expect(roleOf(sc, 'file-c', 'maya')).toBe('Editor')
   })
 })
+
+describe('regression: restrict a file, then restore direct access to the same file', () => {
+  const snapshot = (s: Scenario) =>
+    Object.fromEntries(s.items.flatMap((i) => PEOPLE.map((p) => [`${i.id}/${p.id}`, roleOf(s, i.id, p.id)])))
+
+  it('grants File A only; the new limited-access folder stays blocked and nothing else changes', () => {
+    const restricted = applyRestrict(initialScenario(), { fileId: 'file-a', folderName: 'Private files', keep: ['maya', 'ravi'] }).scenario
+    const folderId = getItem(restricted, 'file-a').parentId!
+    expect(canOpen(restricted, 'file-a', 'alex')).toBe(false)
+
+    const { scenario: restored } = applyShareFile(restricted, 'file-a', 'alex', 'Viewer')
+    expect(access(restored, 'file-a', 'alex')).toEqual({ role: 'Viewer', sourceId: 'file-a' })
+    expect(canOpen(restored, folderId, 'alex')).toBe(false)
+    expect(getItem(restored, folderId).inherits).toBe(false)
+    expect(getItem(restored, folderId).grants.alex).toBeUndefined()
+    expect(getItem(restored, 'file-a').parentId).toBe(folderId)
+    expect(roleOf(restored, PROJECT_ID, 'alex')).toBe('Editor')
+    expect(roleOf(restored, 'file-b', 'alex')).toBe('Editor')
+
+    const before = snapshot(restricted)
+    const after = snapshot(restored)
+    const changed = Object.keys(after).filter((k) => after[k] !== before[k])
+    expect(changed).toEqual(['file-a/alex'])
+  })
+
+  it('sharing again with the same role adds no duplicate grant', () => {
+    const restricted = applyRestrict(initialScenario(), { fileId: 'file-a', folderName: 'Private files', keep: ['maya', 'ravi'] }).scenario
+    const once = applyShareFile(restricted, 'file-a', 'alex', 'Viewer').scenario
+    const twice = applyShareFile(once, 'file-a', 'alex', 'Viewer')
+    expect(twice.scenario).toEqual(once)
+    expect(twice.operations[0]).toMatch(/already had Viewer/)
+  })
+})

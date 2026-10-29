@@ -1,10 +1,14 @@
 // Local-only study event log. Nothing is persisted or transmitted.
 
+import type { ScenarioId } from './model'
+
 export type EventType =
   | 'screen_opened'
   | 'action_selected'
   | 'destination_chosen'
   | 'people_selection_changed'
+  | 'recipient_selected'
+  | 'role_selected'
   | 'review_opened'
   | 'confirmation'
   | 'simulated_success'
@@ -24,6 +28,8 @@ export interface LogEntry {
   viewer: string
   mode: 'participant' | 'facilitator'
   variant: Variant
+  /** Facilitator-selected starting scenario. */
+  scenario: ScenarioId
 }
 
 export type LogFn = (type: EventType, detail: string) => void

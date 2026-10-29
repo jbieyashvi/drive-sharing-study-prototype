@@ -3,7 +3,9 @@
 // result that confirmation will commit.
 
 export type PersonId = 'you' | 'maya' | 'ravi' | 'alex'
-export type Role = 'Owner' | 'Editor' | 'Viewer'
+export type Role = 'Owner' | 'Editor' | 'Commenter' | 'Viewer'
+/** Roles a file can be shared with. */
+export const SHARE_ROLES = ['Viewer', 'Commenter', 'Editor'] as const satisfies readonly Role[]
 
 export interface Person {
   id: PersonId
@@ -37,6 +39,10 @@ export interface Scenario {
 
 export const ROOT_ID = 'my-drive'
 export const PROJECT_ID = 'client-project'
+export const PRIVATE_ID = 'private-files'
+
+/** 'restrict' is the original study task; 'restore' gives one private file back to one person. */
+export type ScenarioId = 'restrict' | 'restore'
 
 export function initialScenario(): Scenario {
   return {
@@ -57,7 +63,41 @@ export function initialScenario(): Scenario {
   }
 }
 
-const RANK: Record<Role, number> = { Owner: 3, Editor: 2, Viewer: 1 }
+/**
+ * Restoration scenario: File A and File C sit in the limited-access folder
+ * "Private files", which Alex can't open. Alex keeps Editor on the project and File B.
+ */
+export function restoreScenario(): Scenario {
+  return {
+    nextId: 1,
+    items: [
+      { id: ROOT_ID, name: 'My Drive', kind: 'folder', parentId: null, inherits: false, grants: { you: 'Owner' } },
+      {
+        id: PROJECT_ID,
+        name: 'Client Project',
+        kind: 'folder',
+        parentId: ROOT_ID,
+        inherits: true,
+        grants: { maya: 'Editor', ravi: 'Viewer', alex: 'Editor' },
+      },
+      {
+        id: PRIVATE_ID,
+        name: 'Private files',
+        kind: 'folder',
+        parentId: PROJECT_ID,
+        inherits: false,
+        grants: { you: 'Owner', maya: 'Editor', ravi: 'Viewer' },
+      },
+      { id: 'file-a', name: 'File A.png', kind: 'file', parentId: PRIVATE_ID, inherits: true, grants: {} },
+      { id: 'file-c', name: 'File C.png', kind: 'file', parentId: PRIVATE_ID, inherits: true, grants: {} },
+      { id: 'file-b', name: 'File B.png', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
+    ],
+  }
+}
+
+export const makeScenario = (id: ScenarioId) => (id === 'restore' ? restoreScenario() : initialScenario())
+
+const RANK: Record<Role, number> = { Owner: 4, Editor: 3, Commenter: 2, Viewer: 1 }
 
 export function getItem(s: Scenario, id: string): Item {
   const item = s.items.find((i) => i.id === id)
@@ -226,4 +266,23 @@ export function lostAccess(before: Scenario, after: Scenario, folderId: string, 
   return [getItem(before, folderId), ...descendants(before, folderId)].filter(
     (i) => canOpen(before, i.id, person) && !canOpen(after, i.id, person),
   )
+}
+
+// ---------------------------------------------------------------------------
+// Share one file with one person (direct grant on the file only)
+
+/**
+ * Adds a direct grant on the file. Folders, other files and other people are
+ * untouched, so a file inside a limited-access folder becomes openable by link
+ * without the parent folder being shared. Re-applying the same role adds nothing.
+ */
+export function applyShareFile(s: Scenario, fileId: string, person: PersonId, role: Role): ApplyResult {
+  const next = clone(s)
+  const file = getItem(next, fileId)
+  if (file.kind !== 'file') throw new Error('Only files can be shared in this prototype.')
+  if (role === 'Owner') throw new Error('Ownership transfer is not simulated.')
+  if (file.grants[person] === role)
+    return { scenario: next, operations: [`${personName(person)} already had ${role} access to ${file.name}.`] }
+  file.grants[person] = role
+  return { scenario: next, operations: [`Shared ${file.name} with ${personName(person)} as ${role}.`] }
 }

@@ -53,8 +53,8 @@ import {
   descendants,
   displayPath,
   getItem,
-  initialScenario,
   isLimited,
+  makeScenario,
   path,
   peopleWithAccess,
   personName,
@@ -62,6 +62,7 @@ import {
   type Item,
   type PersonId,
   type Scenario,
+  type ScenarioId,
 } from './model'
 import type { EventType, LogEntry, Variant } from './log'
 
@@ -88,13 +89,25 @@ function writeVariant(variant: Variant) {
   history.replaceState(null, '', url)
 }
 
+// The original restriction task is the default; ?scenario=restore starts the restoration scenario.
+const readScenario = (): ScenarioId =>
+  new URLSearchParams(location.search).get('scenario') === 'restore' ? 'restore' : 'restrict'
+
+function writeScenario(id: ScenarioId) {
+  const url = new URL(location.href)
+  if (id === 'restore') url.searchParams.set('scenario', 'restore')
+  else url.searchParams.delete('scenario')
+  history.replaceState(null, '', url)
+}
+
 // Each variant keeps its own scenario so outcomes in one never leak into the other.
-const initialScenarios = (): Record<Variant, Scenario> => ({ A: initialScenario(), B: initialScenario() })
+const initialScenarios = (id: ScenarioId): Record<Variant, Scenario> => ({ A: makeScenario(id), B: makeScenario(id) })
 
 // Mock metadata for display only.
 const SIZES: Record<string, string> = {
   'file-a': '1.2 MB',
   'file-b': '864 KB',
+  'file-c': '2.1 MB',
 }
 const sizeOf = (item: Item) => (item.kind === 'folder' ? '—' : (SIZES[item.id] ?? '—'))
 const MODIFIED = 'Oct 29, 2026'
@@ -133,7 +146,8 @@ const itemIcon = (item: Item, size = 24) =>
 export default function App() {
   const [mode, setMode] = useState<Mode>(readMode)
   const [variant, setVariant] = useState<Variant>(readVariant)
-  const [scenarios, setScenarios] = useState(initialScenarios)
+  const [scenarioId, setScenarioId] = useState<ScenarioId>(readScenario)
+  const [scenarios, setScenarios] = useState(() => initialScenarios(readScenario()))
   const scenario = scenarios[variant]
   const [viewer, setViewer] = useState<PersonId>('you')
   const [section, setSection] = useState<Section>('drive')
@@ -158,9 +172,9 @@ export default function App() {
 
   const start = useRef(0)
   const seq = useRef(1)
-  const ctx = useRef({ viewer, mode, variant })
+  const ctx = useRef({ viewer, mode, variant, scenarioId })
   useLayoutEffect(() => {
-    ctx.current = { viewer, mode, variant }
+    ctx.current = { viewer, mode, variant, scenarioId }
   })
   useEffect(() => {
     start.current = performance.now()
@@ -174,6 +188,7 @@ export default function App() {
       viewer: 'you',
       mode: readMode(),
       variant: readVariant(),
+      scenario: readScenario(),
     },
   ])
 
@@ -186,6 +201,7 @@ export default function App() {
       viewer: ctx.current.viewer,
       mode: ctx.current.mode,
       variant: ctx.current.variant,
+      scenario: ctx.current.scenarioId,
     }
     setLog((l) => [...l, entry])
   }, [])
@@ -207,6 +223,17 @@ export default function App() {
     },
     [addLog],
   )
+
+  const notice = useCallback((text: string) => setToast({ text, key: Date.now() }), [])
+
+  // Sharing a folder would cover every file inside it, which is a different scope from sharing one file.
+  const shareFolder = (item: Item) => {
+    if (scenarioId !== 'restore') return unavailable('Sharing folders')
+    addLog('action_selected', `unavailable: Share folder ${item.name}`)
+    notice(
+      `Sharing “${item.name}” would give access to everything inside it. Folder sharing isn’t available in this prototype — share a single file instead.`,
+    )
+  }
 
   const switchMode = useCallback(
     (next: Mode) => {
@@ -252,11 +279,12 @@ export default function App() {
     addLog('screen_opened', `sidebar: ${s === 'drive' ? 'My Drive' : MOCK_SECTIONS[s].title}`)
   }
 
-  const openItem = (item: Item, as: PersonId = viewer) => {
+  const openItem = (item: Item, via?: 'link') => {
+    const as = viewer
     const ok = canOpen(scenario, item.id, as)
     addLog(
       'file_open_attempt',
-      `${item.name} as ${personName(as)} → ${ok ? `opened (${roleOf(scenario, item.id, as)})` : 'You need access'}`,
+      `${via ? 'direct link: ' : ''}${item.name} as ${personName(as)} → ${ok ? `opened (${roleOf(scenario, item.id, as)})` : 'You need access'}`,
     )
     if (item.kind === 'folder' && ok) {
       navigate(item.id)
@@ -272,7 +300,7 @@ export default function App() {
   }
 
   const reset = () => {
-    setScenarios(initialScenarios())
+    setScenarios(initialScenarios(scenarioId))
     setViewer('you')
     setSection('drive')
     setFolderId(PROJECT_ID)
@@ -303,6 +331,24 @@ export default function App() {
     setSelected(null)
     setQuery('')
     addLog('facilitator', `variant → ${next}`)
+  }
+
+  // Facilitator only. Both versions restart from the chosen scenario; the drawer confirms first if a flow is open.
+  const switchScenario = (next: ScenarioId) => {
+    if (next === scenarioId) return
+    setScenarioId(next)
+    writeScenario(next)
+    ctx.current = { ...ctx.current, scenarioId: next }
+    setScenarios(initialScenarios(next))
+    setFlow(null)
+    setOpened(null)
+    setViewer('you')
+    ctx.current = { ...ctx.current, viewer: 'you' }
+    setSection('drive')
+    setFolderId(PROJECT_ID)
+    setSelected(null)
+    setQuery('')
+    addLog('facilitator', `scenario → ${next}`)
   }
 
   const searching = query.trim() !== ''
@@ -346,7 +392,11 @@ export default function App() {
         icon: <PersonAddIcon />,
         separatorBefore: true,
         onSelect: () =>
-          canShare ? openShare(item) : unavailable(`Sharing ${item.kind === 'folder' ? 'folders' : 'as this person'}`),
+          canShare
+            ? openShare(item)
+            : item.kind === 'folder'
+              ? shareFolder(item)
+              : unavailable('Sharing as this person'),
       },
       {
         id: 'copy',
@@ -484,7 +534,7 @@ export default function App() {
                             id: 'share',
                             label: 'Share',
                             icon: <PersonAddIcon />,
-                            onSelect: () => unavailable('Sharing folders'),
+                            onSelect: () => shareFolder(getItem(scenario, folderId)),
                           },
                           {
                             id: 'info',
@@ -520,7 +570,9 @@ export default function App() {
           onClick={() =>
             viewer === 'you' && selectedItem.kind === 'file'
               ? openShare(selectedItem)
-              : unavailable(`Sharing ${selectedItem.kind === 'folder' ? 'folders' : 'as this person'}`)
+              : selectedItem.kind === 'folder'
+                ? shareFolder(selectedItem)
+                : unavailable('Sharing as this person')
           }
         >
           <PersonAddIcon />
@@ -916,6 +968,9 @@ export default function App() {
               scenario={scenario}
               variant={variant}
               onVariant={switchVariant}
+              scenarioId={scenarioId}
+              onScenario={switchScenario}
+              flowOpen={!!flow}
               viewer={viewer}
               onViewer={(v) => {
                 setViewer(v)
@@ -930,7 +985,7 @@ export default function App() {
                 setFailureMode(m)
                 addLog('facilitator', `failure simulation → ${m}`)
               }}
-              onOpen={(item) => openItem(item)}
+              onOpen={(item) => openItem(item, 'link')}
               onReset={reset}
               onParticipant={() => switchMode('participant')}
               onClose={() => setDrawer(false)}
@@ -949,7 +1004,9 @@ export default function App() {
           onFailureUsed={() => failureMode === 'next' && setFailureMode('off')}
           onCommit={(s) => setScenarios((prev) => ({ ...prev, [flow.variant]: s }))}
           variant={flow.variant}
+          addPeople={scenarioId === 'restore'}
           onUnavailable={unavailable}
+          onNotice={notice}
           onClose={(to) => {
             setFlow(null)
             addLog('screen_opened', 'share flow closed')

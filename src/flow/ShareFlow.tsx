@@ -16,10 +16,14 @@ import {
 } from '../components/Icons'
 import {
   PEOPLE,
+  ROOT_ID,
+  SHARE_ROLES,
   access,
   applyRemoveFromFolder,
   applyRestrict,
+  applyShareFile,
   canOpen,
+  children,
   descendants,
   displayPath,
   getItem,
@@ -30,6 +34,7 @@ import {
   roleOf,
   validateFolderName,
   type PersonId,
+  type Role,
   type Scenario,
 } from '../model'
 import type { LogFn, Variant } from '../log'
@@ -38,6 +43,8 @@ export type FailureMode = 'off' | 'next' | 'always'
 
 type Step =
   | 'share'
+  | 'add'
+  | 'addReview'
   | 'decide'
   | 'removeReview'
   | 'setup'
@@ -49,7 +56,7 @@ type Step =
   | 'result'
   | 'summary'
 
-type Branch = 'project' | 'restrict'
+type Branch = 'project' | 'restrict' | 'share'
 
 interface Outcome {
   branch: Branch
@@ -68,13 +75,19 @@ interface Props {
   onClose: (navigateTo?: string) => void
   /** Shows the shared "Not available in this prototype" notice. */
   onUnavailable: (what: string) => void
+  /** Shows a short toast. */
+  onNotice: (text: string) => void
+  /** Restoration scenario: "Add people" shares this one file with a study account. */
+  addPeople: boolean
   log: LogFn
   variant: Variant
 }
 
 const DEFAULT_FOLDER_NAME = 'Private files'
 const APPLY_DELAY_MS = 1400
-const DRAFT_STEPS: Step[] = ['setup', 'destination', 'people', 'review', 'failed']
+const DRAFT_STEPS: Step[] = ['setup', 'destination', 'people', 'review', 'addReview', 'failed']
+// Placeholder copied by "Copy file link"; it is not a real Drive address.
+const studyLink = (fileId: string) => `https://example.com/study-file/${fileId}`
 
 const joinNames = (names: string[]) =>
   names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
@@ -97,6 +110,8 @@ export function ShareFlow({
   onCommit,
   onClose,
   onUnavailable,
+  onNotice,
+  addPeople,
   log,
   variant,
 }: Props) {
@@ -115,7 +130,16 @@ export function ShareFlow({
   const [destAttempted, setDestAttempted] = useState(false)
   const [keep, setKeep] = useState<Partial<Record<PersonId, boolean>>>({})
   const [outcome, setOutcome] = useState<Outcome | null>(null)
-  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  // Where Discard leads: close the whole dialog, or drop only the add-people draft.
+  const [confirmDiscard, setConfirmDiscard] = useState<'close' | 'share' | null>(null)
+  // Add-people draft (restoration scenario). Nothing is shared until confirmation.
+  const [recipient, setRecipient] = useState<PersonId | null>(null)
+  const [shareRole, setShareRole] = useState<Exclude<Role, 'Owner'>>('Viewer')
+  const [query, setQuery] = useState('')
+  const [activeOpt, setActiveOpt] = useState(0)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [backFromAdd, setBackFromAdd] = useState(false)
+  const recipientInput = useRef<HTMLInputElement>(null)
   // Version B: where the restrict draft started, so Back from review returns there.
   const [restrictEntry, setRestrictEntry] = useState<'decide' | 'setup'>('decide')
   const [existingOpen, setExistingOpen] = useState(false)
@@ -154,6 +178,15 @@ export function ShareFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, scenario, folderName, keptList.join()])
 
+  const sharePreview = useMemo(() => {
+    if (step !== 'addReview' || !recipient) return null
+    try {
+      return applyShareFile(scenario, fileId, recipient, shareRole)
+    } catch {
+      return null
+    }
+  }, [step, scenario, fileId, recipient, shareRole])
+
   const removalPreview = useMemo(() => {
     if (step !== 'removeReview' || !target) return null
     const res = applyRemoveFromFolder(scenario, sourceId, target)
@@ -171,11 +204,11 @@ export function ShareFlow({
     setStep(next)
   }
 
-  const isDirty = DRAFT_STEPS.includes(step)
+  const isDirty = DRAFT_STEPS.includes(step) || (step === 'add' && recipient !== null)
   const requestClose = () => {
     if (step === 'applying') return
     if (isDirty) {
-      setConfirmDiscard(true)
+      setConfirmDiscard('close')
       return
     }
     log('action_selected', `close flow from ${step}`)
@@ -260,11 +293,15 @@ export function ShareFlow({
   }
 
   const confirmApply = () => {
-    if (applying.current || !branch || !target) return
+    if (applying.current || !branch || !(branch === 'share' ? recipient : target)) return
     applying.current = true
     log(
       'confirmation',
-      branch === 'restrict' ? 'Move file and update access' : `Remove ${targetName} from ${sourceName}`,
+      branch === 'share'
+        ? `Share ${file.name} with ${personName(recipient!)} as ${shareRole}`
+        : branch === 'restrict'
+          ? 'Move file and update access'
+          : `Remove ${targetName} from ${sourceName}`,
     )
     go('applying')
     const before = scenario
@@ -277,9 +314,11 @@ export function ShareFlow({
         return
       }
       const res =
-        branch === 'restrict'
-          ? applyRestrict(before, { ...plan, folderName: folderName.trim() })
-          : applyRemoveFromFolder(before, sourceId, target)
+        branch === 'share'
+          ? applyShareFile(before, fileId, recipient!, shareRole)
+          : branch === 'restrict'
+            ? applyRestrict(before, { ...plan, folderName: folderName.trim() })
+            : applyRemoveFromFolder(before, sourceId, target!)
       const newFolderId = branch === 'restrict' ? getItem(res.scenario, fileId).parentId! : undefined
       onCommit(res.scenario)
       setOutcome({
@@ -293,6 +332,111 @@ export function ShareFlow({
       go('result')
     }, APPLY_DELAY_MS)
   }
+
+  // ---- Add people (restoration scenario) ----
+  const parent = getItem(scenario, fileParentId)
+  const parentLimited = isLimited(parent)
+  const scopeText = `This shares ${short} only. It does not share the ${parent.name} folder or the other files inside it.`
+  const recipientName = recipient ? personName(recipient) : ''
+  const existing = recipient ? access(scenario, fileId, recipient) : null
+  const q = query.trim().toLowerCase()
+  const matches = q
+    ? PEOPLE.filter((p) => p.id !== 'you' && (p.name.toLowerCase().includes(q) || p.email.includes(q)))
+    : []
+  const active = Math.min(activeOpt, Math.max(matches.length - 1, 0))
+
+  const describeAccess = (p: PersonId) => {
+    const a = access(scenario, fileId, p)
+    if (!a) return null
+    return a.sourceId === fileId
+      ? `${a.role} (shared directly)`
+      : `${a.role}, from “${getItem(scenario, a.sourceId).name}”`
+  }
+
+  const startAdd = () => {
+    log('action_selected', `Add people: ${file.name}`)
+    setBranch('share')
+    setBackFromAdd(false)
+    go('add')
+  }
+
+  const clearAdd = () => {
+    setRecipient(null)
+    setShareRole('Viewer')
+    setQuery('')
+    setAddError(null)
+  }
+
+  const backToShare = () => {
+    clearAdd()
+    setBackFromAdd(true)
+    go('share')
+  }
+
+  const pickRecipient = (p: PersonId) => {
+    if (recipient === p) {
+      setAddError(`${personName(p)} is already added.`)
+      return
+    }
+    if (recipient) {
+      setAddError(`This prototype shares with one person at a time. Remove ${recipientName} to choose someone else.`)
+      return
+    }
+    setRecipient(p)
+    setQuery('')
+    setAddError(null)
+    const has = describeAccess(p)
+    log('recipient_selected', `${personName(p)}${has ? ` — already has access: ${has}` : ''}`)
+  }
+
+  const unmatchedError = () =>
+    q.includes('@')
+      ? `“${query.trim()}” isn’t a study account. Only the study accounts (Maya, Ravi and Alex, @example.com) can be added in this prototype.`
+      : `No study account matches “${query.trim()}”.`
+
+  const submitQuery = () => {
+    if (matches.length) return pickRecipient(matches[active].id)
+    if (!q) return
+    const msg = unmatchedError()
+    setAddError(msg)
+    log('action_selected', `recipient rejected: ${msg}`)
+  }
+
+  const continueFromAdd = () => {
+    if (!recipient) {
+      const msg = q ? unmatchedError() : 'Add a person to share with.'
+      setAddError(q && matches.length ? 'Choose a person from the list.' : msg)
+      log('action_selected', `Continue blocked: ${msg}`)
+      recipientInput.current?.focus()
+      return
+    }
+    if (existing) {
+      log('action_selected', `Continue blocked: ${recipientName} already has access`)
+      return
+    }
+    log('review_opened', `share ${file.name} with ${recipientName} as ${shareRole}`)
+    go('addReview')
+  }
+
+  // The file, everything beside it, its folder, and the rest of the enclosing project.
+  const scopeItems = (() => {
+    const out = [file, ...children(scenario, fileParentId).filter((i) => i.id !== fileId), parent]
+    if (parent.parentId && parent.parentId !== ROOT_ID) {
+      const inParent = new Set([parent.id, ...descendants(scenario, parent.id).map((i) => i.id)])
+      out.push(
+        getItem(scenario, parent.parentId),
+        ...descendants(scenario, parent.parentId).filter((i) => !inParent.has(i.id)),
+      )
+    }
+    return out
+  })()
+
+  const scopeNote = (
+    <section className="access-summary scope-note" aria-label="Sharing scope">
+      <LimitedFolderIcon size={18} />
+      <p>{scopeText}</p>
+    </section>
+  )
 
   const header = (title: string, opts: { closable?: boolean } = {}) => (
     <div className="dialog-header">
@@ -448,7 +592,12 @@ export function ShareFlow({
                 </span>
               </div>
             )}
-            <button type="button" className="add-people" onClick={() => onUnavailable('Adding people')}>
+            <button
+              type="button"
+              className="add-people"
+              data-autofocus={backFromAdd || undefined}
+              onClick={addPeople ? startAdd : () => onUnavailable('Adding people')}
+            >
               Add people, groups, spaces, and calendar events
             </button>
             <h3 className="section-label">People with access</h3>
@@ -536,6 +685,262 @@ export function ShareFlow({
         </>
       )
       escape = () => onClose()
+      break
+    }
+
+    case 'add': {
+      const cancel = () => {
+        log('action_selected', 'Cancel (add people)')
+        if (recipient) setConfirmDiscard('share')
+        else backToShare()
+      }
+      escape = recipient ? requestClose : cancel
+      const blocked = !recipient || !!existing
+      body = (
+        <>
+          {header(`Share “${file.name}”`)}
+          {scopeNote}
+          <div className="dialog-body">
+            <div className="add-row">
+              <div className="recipient-field">
+                <label className="visually-hidden" htmlFor="recipient">
+                  Add people by name or email
+                </label>
+                {recipient && (
+                  <span className="recipient-chip">
+                    <Avatar id={recipient} />
+                    <span>
+                      {recipientName} <span className="muted">{PEOPLE.find((x) => x.id === recipient)!.email}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-button chip-remove"
+                      aria-label={`Remove ${recipientName}`}
+                      onClick={() => {
+                        log('recipient_selected', `removed ${recipientName}`)
+                        clearAdd()
+                        recipientInput.current?.focus()
+                      }}
+                    >
+                      <CloseIcon size={16} />
+                    </button>
+                  </span>
+                )}
+                <input
+                  id="recipient"
+                  ref={recipientInput}
+                  data-autofocus
+                  className="recipient-input"
+                  role="combobox"
+                  autoComplete="off"
+                  placeholder={recipient ? '' : 'Add people by name or email'}
+                  aria-expanded={matches.length > 0}
+                  aria-controls="recipient-options"
+                  aria-autocomplete="list"
+                  aria-activedescendant={matches.length ? `opt-${matches[active].id}` : undefined}
+                  aria-invalid={!!addError}
+                  aria-describedby={addError ? 'recipient-error recipient-help' : 'recipient-help'}
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setActiveOpt(0)
+                    setAddError(null)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown' && matches.length) {
+                      e.preventDefault()
+                      setActiveOpt((active + 1) % matches.length)
+                    } else if (e.key === 'ArrowUp' && matches.length) {
+                      e.preventDefault()
+                      setActiveOpt((active - 1 + matches.length) % matches.length)
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault()
+                      submitQuery()
+                    } else if (e.key === 'Escape' && query) {
+                      // Clear the suggestions first; a second Escape closes the dialog.
+                      e.stopPropagation()
+                      setQuery('')
+                    }
+                  }}
+                />
+              </div>
+              <div className="role-field">
+                <label className="field-label" htmlFor="share-role">
+                  Role
+                </label>
+                <select
+                  id="share-role"
+                  value={shareRole}
+                  onChange={(e) => {
+                    const r = e.target.value as typeof shareRole
+                    setShareRole(r)
+                    log('role_selected', `${r} for ${file.name}${recipient ? ` (${recipientName})` : ''}`)
+                  }}
+                >
+                  {SHARE_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {matches.length > 0 && (
+              <ul id="recipient-options" role="listbox" className="option-list" aria-label="Study accounts">
+                {matches.map((p, i) => {
+                  const has = describeAccess(p.id)
+                  return (
+                    <li
+                      key={p.id}
+                      id={`opt-${p.id}`}
+                      role="option"
+                      aria-selected={i === active}
+                      className="person-row option"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setActiveOpt(i)}
+                      onClick={() => pickRecipient(p.id)}
+                    >
+                      <Avatar id={p.id} />
+                      <span className="person-text">
+                        <span className="person-name">{p.name}</span>
+                        <span className="person-sub">
+                          {p.email}
+                          {recipient === p.id ? ' · Already added' : has ? ` · Has access: ${has}` : ''}
+                        </span>
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <p id="recipient-help" className="muted">
+              Study accounts only: Maya, Ravi and Alex (@example.com).
+            </p>
+            {addError && (
+              <p id="recipient-error" className="field-error" role="alert">
+                <span aria-hidden="true">⚠ </span>
+                {addError}
+              </p>
+            )}
+            <div aria-live="polite">
+              {recipient && existing && (
+                <div className="callout callout-info">
+                  {recipientName} already has {existing.role} access to {short}
+                  {existing.sourceId === fileId
+                    ? ' (shared directly)'
+                    : `, from “${getItem(scenario, existing.sourceId).name}”`}
+                  . Sharing again wouldn’t add anything, so there’s nothing to share.
+                </div>
+              )}
+              {recipient && !existing && (
+                <p className="muted">
+                  {recipientName} will be able to open {short} from its link as {shareRole}
+                  {parentLimited && !canOpen(scenario, parent.id, recipient)
+                    ? `, but still won’t be able to open the ${parent.name} folder or ${
+                        children(scenario, parent.id).length > 2 ? 'the other files' : 'the other file'
+                      } in it.`
+                    : '.'}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="dialog-footer">
+            <p className="footer-note">No changes applied yet.</p>
+            <div className="button-row">
+              <button type="button" className="btn btn-text" onClick={cancel}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-filled" aria-disabled={blocked} onClick={continueFromAdd}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </>
+      )
+      break
+    }
+
+    case 'addReview': {
+      if (!recipient) break
+      const after = sharePreview?.scenario
+      const others = peopleWithAccess(scenario, fileId).filter((p) => p !== recipient)
+      const othersUnchanged =
+        !!after &&
+        others.every((p) => scenario.items.every((i) => roleOf(scenario, i.id, p) === roleOf(after, i.id, p)))
+      body = (
+        <>
+          {header(`Review sharing for ${short}`)}
+          {scopeNote}
+          <div className="dialog-body">
+            <dl className="facts">
+              <div>
+                <dt>File</dt>
+                <dd>{fileChip}</dd>
+              </div>
+              <div>
+                <dt>Location</dt>
+                <dd>{displayPath(scenario, fileParentId)}</dd>
+              </div>
+              <div>
+                <dt>Person</dt>
+                <dd>
+                  {recipientName} <span className="muted">{PEOPLE.find((x) => x.id === recipient)!.email}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Planned role</dt>
+                <dd>{shareRole}</dd>
+              </div>
+            </dl>
+            <table className="access-table">
+              <caption className="section-label">{recipientName}’s access before and after</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Item</th>
+                  <th scope="col">Before</th>
+                  <th scope="col">After</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scopeItems.map((i) => {
+                  const was = roleOf(scenario, i.id, recipient)
+                  const now = after ? roleOf(after, i.id, recipient) : null
+                  return (
+                    <tr key={i.id} className={was !== now ? 'row-changed' : ''}>
+                      <th scope="row">
+                        {i.name}
+                        {i.kind === 'folder' && <span className="muted"> folder</span>}
+                      </th>
+                      <td>
+                        <AccessBadge role={was} />
+                      </td>
+                      <td>
+                        <AccessBadge role={now} />
+                        {was === now && <span className="muted"> (unchanged)</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {othersUnchanged && others.length > 0 && (
+              <p className="muted">
+                {joinNames(others.map((p) => `${personName(p)} (${roleOf(scenario, fileId, p)})`))} keep their current
+                access.
+              </p>
+            )}
+            <p className="footer-note">Nothing has changed yet. Sharing happens only after you confirm.</p>
+          </div>
+          <div className="dialog-footer">
+            <button type="button" className="btn btn-text" onClick={() => go('add')}>
+              Back
+            </button>
+            <button type="button" className="btn btn-filled" onClick={confirmApply} disabled={!after}>
+              Share {short}
+            </button>
+          </div>
+        </>
+      )
       break
     }
 
@@ -1001,7 +1406,11 @@ export function ShareFlow({
           <div className="dialog-footer">
             <span />
             <button type="button" className="btn btn-filled" disabled>
-              {branch === 'restrict' ? 'Move file and update access' : `Remove ${targetName} from ${sourceName}`}
+              {branch === 'share'
+                ? `Share ${short}`
+                : branch === 'restrict'
+                  ? 'Move file and update access'
+                  : `Remove ${targetName} from ${sourceName}`}
             </button>
           </div>
         </>
@@ -1019,7 +1428,7 @@ export function ShareFlow({
             <button
               type="button"
               className="btn btn-text"
-              onClick={() => go(branch === 'project' ? 'removeReview' : 'review')}
+              onClick={() => go(branch === 'project' ? 'removeReview' : branch === 'share' ? 'addReview' : 'review')}
             >
               Back to review
             </button>
@@ -1033,8 +1442,62 @@ export function ShareFlow({
 
     case 'result':
     case 'summary': {
-      if (!outcome || !target) break
+      if (!outcome) break
       const { before, after } = outcome
+      if (outcome.branch === 'share' && recipient) {
+        const role = roleOf(after, fileId, recipient)
+        // Everything except the recipient's File C cell must match the starting state.
+        const restUnchanged = PEOPLE.every((p) =>
+          before.items.every(
+            (i) => (i.id === fileId && p.id === recipient) || roleOf(before, i.id, p.id) === roleOf(after, i.id, p.id),
+          ),
+        )
+        const copyLink = async () => {
+          log('action_selected', `Copy file link: ${file.name} (no permission change)`)
+          try {
+            await navigator.clipboard.writeText(studyLink(fileId))
+            onNotice(`Link to ${file.name} copied. Sharing didn’t change.`)
+          } catch {
+            onNotice('Couldn’t copy the link. Sharing didn’t change.')
+          }
+        }
+        body = (
+          <>
+            {header(`${short} shared with ${recipientName}`)}
+            <div className="dialog-body">
+              <p className="outcome-line">
+                <strong>
+                  {role ? `${recipientName} can open ${short} as ${role}.` : `${recipientName} can’t open ${short}.`}
+                </strong>
+              </p>
+              {restUnchanged && (
+                <p>
+                  {parentLimited
+                    ? 'Other private files and folder access were not changed.'
+                    : 'Access to other files and folders was not changed.'}
+                </p>
+              )}
+              {parentLimited && !canOpen(after, parent.id, recipient) && (
+                <p className="muted">
+                  {recipientName} opens {short} from its link. {recipientName} still can’t open the {parent.name}{' '}
+                  folder.
+                </p>
+              )}
+            </div>
+            <div className="dialog-footer">
+              <button type="button" className="btn btn-outline" onClick={copyLink}>
+                <LinkIcon size={18} /> Copy file link
+              </button>
+              <button type="button" className="btn btn-filled" data-autofocus onClick={() => onClose()}>
+                Done
+              </button>
+            </div>
+          </>
+        )
+        escape = () => onClose()
+        break
+      }
+      if (!target) break
       const returnBtn = (
         <button type="button" className="btn btn-filled" onClick={() => onClose(fileParentId)}>
           Return to project
@@ -1179,7 +1642,7 @@ export function ShareFlow({
           describedBy="discard-desc"
           role="alertdialog"
           size="sm"
-          onEscape={() => setConfirmDiscard(false)}
+          onEscape={() => setConfirmDiscard(null)}
         >
           <div className="dialog-header">
             <h2 id="discard-title" tabIndex={-1}>
@@ -1192,7 +1655,7 @@ export function ShareFlow({
           <div className="dialog-footer">
             <span />
             <div className="button-row">
-              <button type="button" className="btn btn-text" data-autofocus onClick={() => setConfirmDiscard(false)}>
+              <button type="button" className="btn btn-text" data-autofocus onClick={() => setConfirmDiscard(null)}>
                 Keep editing
               </button>
               <button
@@ -1200,7 +1663,10 @@ export function ShareFlow({
                 className="btn btn-filled"
                 onClick={() => {
                   log('action_selected', `discard draft from ${step}`)
-                  onClose()
+                  if (confirmDiscard === 'share') {
+                    setConfirmDiscard(null)
+                    backToShare()
+                  } else onClose()
                 }}
               >
                 Discard

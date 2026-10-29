@@ -1982,3 +1982,117 @@ fieldset {
   align-items: center;
   gap: 12px;
 }
+
+/* Add people (restoration scenario) */
+
+.scope-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.scope-note p {
+  margin: 0;
+}
+
+.add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.recipient-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 56px;
+  padding: 6px 12px;
+  border: 1px solid #747775;
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.recipient-field:focus-within {
+  border-color: var(--blue);
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.recipient-input {
+  flex: 1;
+  min-width: 160px;
+  height: 36px;
+  border: 0;
+  outline: none;
+  font: inherit;
+  background: transparent;
+  color: var(--text);
+}
+
+.recipient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  font-size: 14px;
+}
+
+.recipient-chip .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+}
+
+.recipient-chip .chip-remove {
+  width: 28px;
+  height: 28px;
+}
+
+.role-field {
+  display: grid;
+  gap: 4px;
+}
+
+.role-field select {
+  height: 56px;
+  padding: 0 12px;
+  border: 1px solid #747775;
+  border-radius: 4px;
+  font: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.option-list {
+  list-style: none;
+  margin: -8px 0 0;
+  padding: 4px 0;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 8px 3px rgba(0, 0, 0, 0.15);
+}
+
+.option-list .option {
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.option-list .option[aria-selected='true'] {
+  background: #e8f0fe;
+}
+
+.access-table .row-changed th,
+.access-table .row-changed td {
+  background: var(--green-soft);
+}
+
+.card-thumb.file-c,
+.details-preview.file-c {
+  background: linear-gradient(135deg, #c58af9, #8ab4f8);
+}
+
+.image-preview.file-c {
+  background: linear-gradient(135deg, #a142f4, #4285f4);
+}

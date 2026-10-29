@@ -13,12 +13,17 @@ import {
   type Item,
   type PersonId,
   type Scenario,
+  type ScenarioId,
 } from './model'
 
 interface Props {
   scenario: Scenario
   variant: Variant
   onVariant: (v: Variant) => void
+  scenarioId: ScenarioId
+  onScenario: (id: ScenarioId) => void
+  /** A share flow is open, so switching scenario would discard its unapplied choices. */
+  flowOpen: boolean
   viewer: PersonId
   onViewer: (p: PersonId) => void
   failureMode: FailureMode
@@ -35,6 +40,9 @@ export function Facilitator({
   scenario,
   variant,
   onVariant,
+  scenarioId,
+  onScenario,
+  flowOpen,
   viewer,
   onViewer,
   failureMode,
@@ -46,6 +54,7 @@ export function Facilitator({
   log,
 }: Props) {
   const [confirmReset, setConfirmReset] = useState(false)
+  const [pendingScenario, setPendingScenario] = useState<ScenarioId | null>(null)
   const items = [getItem(scenario, PROJECT_ID), ...descendants(scenario, PROJECT_ID)]
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -109,11 +118,52 @@ export function Facilitator({
         </section>
 
         <section>
-          <h3>Scenario</h3>
+          <h3>
+            <label htmlFor="scenario">Scenario</label>
+          </h3>
+          <select
+            id="scenario"
+            value={pendingScenario ?? scenarioId}
+            onChange={(e) => {
+              const next = e.target.value as ScenarioId
+              if (next === scenarioId) setPendingScenario(null)
+              else if (flowOpen) setPendingScenario(next)
+              else onScenario(next)
+            }}
+          >
+            <option value="restrict">Restrict one file (original task)</option>
+            <option value="restore">Restore access to one private file (?scenario=restore)</option>
+          </select>
+          {pendingScenario && (
+            <div className="button-row" role="alert">
+              <span className="panel-note">
+                A share flow is open. Switching closes it and discards any choices that haven’t been applied.
+              </span>
+              <button type="button" className="btn btn-text small" onClick={() => setPendingScenario(null)}>
+                Keep current
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger small"
+                onClick={() => {
+                  onScenario(pendingScenario)
+                  setPendingScenario(null)
+                }}
+              >
+                Switch scenario
+              </button>
+            </div>
+          )}
+          <p className="panel-note">
+            {scenarioId === 'restore'
+              ? 'Client Project holds File B and the limited-access folder Private files (File A, File C). Alex can’t open Private files. Task: share only File C with Alex.'
+              : 'Client Project holds File A and File B. Task: Alex loses File A, keeps the project.'}{' '}
+            Switching restarts both versions from this scenario. Participants never see which one is selected.
+          </p>
           {confirmReset ? (
             <div className="button-row">
               <span className="panel-note">
-                Restore files, roles, location and settings for both versions, and clear the log?
+                Restore this scenario’s files, roles, location and settings for both versions, and clear the log?
               </span>
               <button type="button" className="btn btn-text small" onClick={() => setConfirmReset(false)}>
                 Cancel
@@ -163,7 +213,7 @@ export function Facilitator({
           </select>
           <p className="panel-note">Inspection tool only. Not a proposed Drive capability.</p>
           <div className="open-as">
-            <span className="panel-note">Open by link as {personName(viewer)}:</span>
+            <span className="panel-note">Open by direct link as {personName(viewer)}:</span>
             {items.map((i) => (
               <button key={i.id} type="button" className="btn btn-outline small" onClick={() => onOpen(i)}>
                 {i.name}

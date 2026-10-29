@@ -13,6 +13,7 @@ npm run dev
 
 - Participant mode: http://localhost:5317
 - Facilitator mode: http://localhost:5317/?mode=facilitator
+- Version B: add `variant=B`, for example http://localhost:5317/?variant=B (participant) or http://localhost:5317/?mode=facilitator&variant=B (facilitator). `variant=A`, a missing value or any other value gives Version A.
 
 Hosted copy (GitHub Pages, rebuilt on every push to `main`):
 
@@ -50,6 +51,23 @@ Task: Alex should lose access to File A, keep access to the project and File B, 
 
 Back keeps every choice you made. If you close the flow with unapplied choices, it asks you to confirm before discarding them. Escape and Cancel never apply anything.
 
+## Version B (comparison variant)
+
+One participant found Version A long and suggested putting a restrict action in the collaborator's role menu. Version B builds that idea so the two flows can be compared. It is **not validated, and it is not assumed to be better.** Fewer screens or clicks in B is not evidence of better usability.
+
+- **Entry point.** Alex's role menu in File A's Share dialog lists Viewer, Commenter and Editor, then a divider, then **Restrict access to this file…** and a separate **Remove access…**. Restrict is not a role and changes nothing by itself. It skips A's decision screen and opens a single setup screen. Remove access works the same way as in A.
+- **Setup: "Restrict access to File A."**
+  - Destination: shows the current location and says the file moves to a new limited-access folder in Client Project. The folder name is editable, defaults to "Private files" and is checked the same way as in A.
+  - An optional, collapsed **Use an existing limited-access folder instead** shows the same empty state as A.
+  - Who keeps access: uses the same checkboxes and warnings as A, with B's wording.
+  - The footer says "No changes applied yet." and has **Cancel** and **Review changes**.
+- **After setup.** Review, applying, the result, and the failure/Retry handling are the same screens as in A, and they are built from B's selections. Back from review returns to setup with everything kept. Cancel and Escape use the same discard confirmation as A.
+- **Isolation.**
+  - Each version keeps its own scenario state. The facilitator drawer shows the active version and can switch it. Switching closes any open flow and discards unapplied choices.
+  - **Reset scenario** resets both versions to the same starting data.
+  - Participant screens never show which version is active.
+- **Logging.** Every log entry has a `variant` field (`"A"` or `"B"`). The download is named `study-log-<variant>-….json`.
+
 ## Drive-like shell (Phase 2)
 
 - The header has a generic brand mark, search, and a persistent label: *Independent study prototype — not affiliated with Google.* The sidebar has New, Home, My Drive, Computers, Shared with me, Recent, Starred, Spam, Trash and a Storage bar. There is also a right app rail that can be collapsed.
@@ -77,7 +95,8 @@ Access works as follows. An item's access is the most permissive grant found by 
 ## Limitations
 
 - There is one scenario and one restricted file at a time. There are no groups, link sharing, domain or Workspace admin policies, or ownership transfer.
-- Changing roles (Viewer ↔ Editor) is not implemented. Only **Remove access** works.
+- Changing roles (Viewer ↔ Editor) is not implemented. Only **Remove access** works, plus **Restrict access to this file…** in Version B.
+- Version B has not been tested with participants. Comparing A and B needs a proper study, and step or click counts alone don't measure usability.
 - Moving into an *existing* limited-access folder is always unavailable, even after one has been created.
 - The prototype doesn't model what happens to people who had direct access to the moved file, beyond checking for contradicting grants.
 - State lives in memory only: refreshing the page resets everything, including the log.

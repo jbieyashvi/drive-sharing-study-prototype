@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AccessBadge, CloseIcon } from './components/Icons'
 import type { FailureMode } from './flow/ShareFlow'
-import type { LogEntry } from './log'
+import type { LogEntry, Variant } from './log'
 import {
   PEOPLE,
   PROJECT_ID,
@@ -17,6 +17,8 @@ import {
 
 interface Props {
   scenario: Scenario
+  variant: Variant
+  onVariant: (v: Variant) => void
   viewer: PersonId
   onViewer: (p: PersonId) => void
   failureMode: FailureMode
@@ -31,6 +33,8 @@ interface Props {
 /** Facilitator-only overlay drawer. Never rendered in participant mode. */
 export function Facilitator({
   scenario,
+  variant,
+  onVariant,
   viewer,
   onViewer,
   failureMode,
@@ -54,7 +58,7 @@ export function Facilitator({
     })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `study-log-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.json`
+    a.download = `study-log-${variant}-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.json`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -91,10 +95,26 @@ export function Facilitator({
         </div>
 
         <section>
+          <h3>
+            <label htmlFor="variant">Active version</label>
+          </h3>
+          <select id="variant" value={variant} onChange={(e) => onVariant(e.target.value as Variant)}>
+            <option value="A">A — original flow (?variant=A)</option>
+            <option value="B">B — restrict from role menu (?variant=B)</option>
+          </select>
+          <p className="panel-note">
+            Each version keeps its own scenario. Switching closes any open flow. Fewer steps in B is not evidence of
+            better usability.
+          </p>
+        </section>
+
+        <section>
           <h3>Scenario</h3>
           {confirmReset ? (
             <div className="button-row">
-              <span className="panel-note">Restore files, roles, location and settings, and clear the log?</span>
+              <span className="panel-note">
+                Restore files, roles, location and settings for both versions, and clear the log?
+              </span>
               <button type="button" className="btn btn-text small" onClick={() => setConfirmReset(false)}>
                 Cancel
               </button>
@@ -194,7 +214,9 @@ export function Facilitator({
             {[...log].reverse().map((e) => (
               <li key={e.seq}>
                 <span className="log-time">+{(e.elapsedMs / 1000).toFixed(1)}s</span>
-                <span className="log-type">{e.type}</span>
+                <span className="log-type">
+                  {e.variant} · {e.type}
+                </span>
                 <span className="log-detail">{e.detail}</span>
               </li>
             ))}

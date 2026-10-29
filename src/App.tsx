@@ -63,7 +63,7 @@ import {
   type PersonId,
   type Scenario,
 } from './model'
-import type { EventType, LogEntry } from './log'
+import type { EventType, LogEntry, Variant } from './log'
 
 type Mode = 'participant' | 'facilitator'
 type Section = 'home' | 'drive' | 'computers' | 'shared' | 'recent' | 'starred' | 'spam' | 'trash'
@@ -77,6 +77,19 @@ function writeMode(mode: Mode) {
   else url.searchParams.delete('mode')
   history.replaceState(null, '', url)
 }
+
+// Version A is the default; anything other than ?variant=B means A.
+const readVariant = (): Variant =>
+  new URLSearchParams(location.search).get('variant')?.toUpperCase() === 'B' ? 'B' : 'A'
+
+function writeVariant(variant: Variant) {
+  const url = new URL(location.href)
+  url.searchParams.set('variant', variant)
+  history.replaceState(null, '', url)
+}
+
+// Each variant keeps its own scenario so outcomes in one never leak into the other.
+const initialScenarios = (): Record<Variant, Scenario> => ({ A: initialScenario(), B: initialScenario() })
 
 // Mock metadata for display only.
 const SIZES: Record<string, string> = {
@@ -119,11 +132,13 @@ const itemIcon = (item: Item, size = 24) =>
 
 export default function App() {
   const [mode, setMode] = useState<Mode>(readMode)
-  const [scenario, setScenario] = useState<Scenario>(initialScenario)
+  const [variant, setVariant] = useState<Variant>(readVariant)
+  const [scenarios, setScenarios] = useState(initialScenarios)
+  const scenario = scenarios[variant]
   const [viewer, setViewer] = useState<PersonId>('you')
   const [section, setSection] = useState<Section>('drive')
   const [folderId, setFolderId] = useState(PROJECT_ID)
-  const [flow, setFlow] = useState<{ fileId: string; key: number } | null>(null)
+  const [flow, setFlow] = useState<{ fileId: string; key: number; variant: Variant } | null>(null)
   const [opened, setOpened] = useState<{ itemId: string; ok: boolean } | null>(null)
   const [failureMode, setFailureMode] = useState<FailureMode>('off')
   const [view, setView] = useState<'list' | 'grid'>('list')
@@ -143,9 +158,9 @@ export default function App() {
 
   const start = useRef(0)
   const seq = useRef(1)
-  const ctx = useRef({ viewer, mode })
+  const ctx = useRef({ viewer, mode, variant })
   useLayoutEffect(() => {
-    ctx.current = { viewer, mode }
+    ctx.current = { viewer, mode, variant }
   })
   useEffect(() => {
     start.current = performance.now()
@@ -158,6 +173,7 @@ export default function App() {
       detail: 'file list: Client Project',
       viewer: 'you',
       mode: readMode(),
+      variant: readVariant(),
     },
   ])
 
@@ -169,6 +185,7 @@ export default function App() {
       detail,
       viewer: ctx.current.viewer,
       mode: ctx.current.mode,
+      variant: ctx.current.variant,
     }
     setLog((l) => [...l, entry])
   }, [])
@@ -251,11 +268,11 @@ export default function App() {
   const openShare = (item: Item) => {
     addLog('action_selected', `Share: ${item.name}`)
     addLog('screen_opened', `share (${item.name})`)
-    setFlow({ fileId: item.id, key: seq.current })
+    setFlow({ fileId: item.id, key: seq.current, variant })
   }
 
   const reset = () => {
-    setScenario(initialScenario())
+    setScenarios(initialScenarios())
     setViewer('you')
     setSection('drive')
     setFolderId(PROJECT_ID)
@@ -271,6 +288,21 @@ export default function App() {
     start.current = performance.now()
     seq.current = 0
     setLog([])
+  }
+
+  // Facilitator only. Closes any open flow (its draft belongs to the old variant).
+  const switchVariant = (next: Variant) => {
+    if (next === variant) return
+    setVariant(next)
+    writeVariant(next)
+    ctx.current = { ...ctx.current, variant: next }
+    setFlow(null)
+    setOpened(null)
+    setSection('drive')
+    setFolderId(PROJECT_ID)
+    setSelected(null)
+    setQuery('')
+    addLog('facilitator', `variant → ${next}`)
   }
 
   const searching = query.trim() !== ''
@@ -882,6 +914,8 @@ export default function App() {
           {drawer && (
             <Facilitator
               scenario={scenario}
+              variant={variant}
+              onVariant={switchVariant}
               viewer={viewer}
               onViewer={(v) => {
                 setViewer(v)
@@ -913,7 +947,8 @@ export default function App() {
           fileId={flow.fileId}
           failureMode={failureMode}
           onFailureUsed={() => failureMode === 'next' && setFailureMode('off')}
-          onCommit={setScenario}
+          onCommit={(s) => setScenarios((prev) => ({ ...prev, [flow.variant]: s }))}
+          variant={flow.variant}
           onUnavailable={unavailable}
           onClose={(to) => {
             setFlow(null)

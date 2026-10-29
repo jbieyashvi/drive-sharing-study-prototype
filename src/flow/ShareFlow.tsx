@@ -32,7 +32,7 @@ import {
   type PersonId,
   type Scenario,
 } from '../model'
-import type { LogFn } from '../log'
+import type { LogFn, Variant } from '../log'
 
 export type FailureMode = 'off' | 'next' | 'always'
 
@@ -40,6 +40,7 @@ type Step =
   | 'share'
   | 'decide'
   | 'removeReview'
+  | 'setup'
   | 'destination'
   | 'people'
   | 'review'
@@ -68,11 +69,12 @@ interface Props {
   /** Shows the shared "Not available in this prototype" notice. */
   onUnavailable: (what: string) => void
   log: LogFn
+  variant: Variant
 }
 
 const DEFAULT_FOLDER_NAME = 'Private files'
 const APPLY_DELAY_MS = 1400
-const DRAFT_STEPS: Step[] = ['destination', 'people', 'review', 'failed']
+const DRAFT_STEPS: Step[] = ['setup', 'destination', 'people', 'review', 'failed']
 
 const joinNames = (names: string[]) =>
   names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
@@ -96,6 +98,7 @@ export function ShareFlow({
   onClose,
   onUnavailable,
   log,
+  variant,
 }: Props) {
   const file = getItem(scenario, fileId)
   // Frozen at open: after a successful move the file's parent changes, but the
@@ -113,6 +116,9 @@ export function ShareFlow({
   const [keep, setKeep] = useState<Partial<Record<PersonId, boolean>>>({})
   const [outcome, setOutcome] = useState<Outcome | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  // Version B: where the restrict draft started, so Back from review returns there.
+  const [restrictEntry, setRestrictEntry] = useState<'decide' | 'setup'>('decide')
+  const [existingOpen, setExistingOpen] = useState(false)
   const applying = useRef(false)
   const timer = useRef<number | undefined>(undefined)
   const nameInput = useRef<HTMLInputElement>(null)
@@ -191,8 +197,24 @@ export function ShareFlow({
     go('decide')
   }
 
+  // Version B: the role menu's restrict action goes straight to the combined setup screen.
+  const startRestrict = (person: PersonId) => {
+    log('action_selected', `Restrict access to this file: ${personName(person)} on ${file.name}`)
+    setTarget(person)
+    setSourceId(access(scenario, fileId, person)?.sourceId ?? fileParentId)
+    setBranch('restrict')
+    setRestrictEntry('setup')
+    setDestMode('new')
+    setFolderName(DEFAULT_FOLDER_NAME)
+    setDestAttempted(false)
+    setExistingOpen(false)
+    setKeep(Object.fromEntries(collaborators.map((p) => [p, p !== person])))
+    go('setup')
+  }
+
   const chooseBranch = (b: Branch) => {
     setBranch(b)
+    setRestrictEntry('decide')
     log(
       'action_selected',
       b === 'project' ? 'A: Remove access to the project' : 'B: Keep project access, restrict this file',
@@ -212,6 +234,17 @@ export function ShareFlow({
     }
     log('destination_chosen', `new folder “${folderName.trim()}” in ${getItem(scenario, fileParentId).name}`)
     go('people')
+  }
+
+  const reviewFromSetup = () => {
+    setDestAttempted(true)
+    if (nameError) {
+      log('action_selected', `Review blocked: ${nameError}`)
+      nameInput.current?.focus()
+      return
+    }
+    log('destination_chosen', `new folder “${folderName.trim()}” in ${getItem(scenario, fileParentId).name}`)
+    openReview()
   }
 
   const toggleKeep = (p: PersonId, value: boolean) => {
@@ -281,6 +314,93 @@ export function ShareFlow({
     </span>
   )
 
+  // Who-keeps-access checklist, shared by Version A's people step and Version B's setup.
+  const keepPeople = (explain: [string, string]) => {
+    const targetKept = target ? !!keep[target] : false
+    const unintended = collaborators.filter((p) => p !== target && !keep[p])
+    return (
+      <>
+        <fieldset className="check-group">
+          <legend className="visually-hidden">People who keep access to {short}</legend>
+          <ul className="explain-list" id="keep-meaning">
+            <li>
+              <span aria-hidden="true">☑ </span>
+              {explain[0]}
+            </li>
+            <li>
+              <span aria-hidden="true">☐ </span>
+              {explain[1]}
+            </li>
+          </ul>
+          <ul className="people-list">
+            {owners.map((p) => (
+              <li key={p} className="person-row">
+                <input type="checkbox" id={`keep-${p}`} checked disabled aria-describedby={`keep-${p}-desc`} />
+                <Avatar id={p} />
+                <label className="person-text" htmlFor={`keep-${p}`}>
+                  <span className="person-name">{personName(p)} — Owner</span>
+                  <span id={`keep-${p}-desc`} className="person-sub">
+                    <span aria-hidden="true">🔒 </span>Always keeps access
+                  </span>
+                </label>
+              </li>
+            ))}
+            {collaborators.map((p) => {
+              const role = roleOf(scenario, fileId, p)
+              const kept = !!keep[p]
+              return (
+                <li key={p} className="person-row">
+                  <input
+                    type="checkbox"
+                    id={`keep-${p}`}
+                    checked={kept}
+                    onChange={(e) => toggleKeep(p, e.target.checked)}
+                    aria-describedby={`keep-${p}-desc`}
+                  />
+                  <Avatar id={p} />
+                  <label className="person-text" htmlFor={`keep-${p}`}>
+                    <span className="person-name">
+                      {personName(p)} — {role}
+                    </span>
+                    <span id={`keep-${p}-desc`} className={`person-sub ${kept ? 'status-keep' : 'status-lose'}`}>
+                      {kept ? (
+                        <>
+                          <span aria-hidden="true">✓ </span>Keeps access as {role}
+                        </>
+                      ) : (
+                        <>
+                          <span aria-hidden="true">✕ </span>Will lose access to {short} after confirmation
+                        </>
+                      )}
+                    </span>
+                  </label>
+                </li>
+              )
+            })}
+          </ul>
+        </fieldset>
+        <div aria-live="polite">
+          {target && (
+            <div className={`callout ${targetKept ? 'callout-info' : 'callout-ok'}`}>
+              {targetKept
+                ? `${targetName} is selected, so ${targetName} will keep access to ${short}.`
+                : `${targetName} will lose access to ${short} after confirmation.`}
+            </div>
+          )}
+          {unintended.length > 0 && (
+            <div className="callout callout-warn" role="note">
+              <strong>
+                <span aria-hidden="true">⚠ </span>
+                {joinNames(unintended.map(personName))} will also lose access to {short}.
+              </strong>{' '}
+              Select them again if they should keep it.
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
   const draftNote = <p className="footer-note">No files moved or permissions changed yet.</p>
 
   let body: React.ReactNode
@@ -339,10 +459,20 @@ export function ShareFlow({
                     disabled: a.role !== r,
                     description: a.role !== r ? 'Not available in this prototype' : undefined,
                   })),
+                  ...(variant === 'B'
+                    ? [
+                        {
+                          id: 'restrict',
+                          label: 'Restrict access to this file…',
+                          separatorBefore: true,
+                          onSelect: () => startRestrict(p),
+                        },
+                      ]
+                    : []),
                   {
                     id: 'remove',
-                    label: 'Remove access',
-                    separatorBefore: true,
+                    label: variant === 'B' ? 'Remove access…' : 'Remove access',
+                    separatorBefore: variant !== 'B',
                     onSelect: () => startRemove(p),
                   },
                 ]
@@ -612,89 +742,117 @@ export function ShareFlow({
       break
     }
 
+    case 'setup': {
+      const parentName = getItem(scenario, fileParentId).name
+      body = (
+        <>
+          {header(`Restrict access to ${short}`)}
+          <div className="dialog-body">
+            <p>Keep the project shared and choose who can open this file.</p>
+            <section className="setup-section" aria-labelledby="setup-dest">
+              <h3 id="setup-dest" className="section-label">
+                Destination
+              </h3>
+              <dl className="facts">
+                <div>
+                  <dt>File</dt>
+                  <dd>{fileChip}</dd>
+                </div>
+                <div>
+                  <dt>Current location</dt>
+                  <dd>{displayPath(scenario, fileParentId)}</dd>
+                </div>
+                <div>
+                  <dt>Moves to</dt>
+                  <dd>
+                    <LimitedFolderIcon size={16} /> A new limited-access folder in {parentName}
+                  </dd>
+                </div>
+              </dl>
+              <label className="field-label" htmlFor="folder-name">
+                Folder name
+              </label>
+              <input
+                id="folder-name"
+                ref={nameInput}
+                className={`text-input ${nameError ? 'invalid' : ''}`}
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+                aria-invalid={!!nameError}
+                aria-describedby={nameError ? 'folder-name-error' : 'folder-location'}
+                onKeyDown={(e) => e.key === 'Enter' && reviewFromSetup()}
+              />
+              {nameError && (
+                <p id="folder-name-error" className="field-error" role="alert">
+                  <span aria-hidden="true">⚠ </span>
+                  {nameError}
+                </p>
+              )}
+              <p id="folder-location" className="muted">
+                Location: {displayPath(scenario, fileParentId)}
+              </p>
+              <button
+                type="button"
+                className="disclosure"
+                aria-expanded={existingOpen}
+                aria-controls="existing-folders"
+                onClick={() => {
+                  setExistingOpen(!existingOpen)
+                  if (!existingOpen) log('destination_chosen', 'option: show existing limited-access folders')
+                }}
+              >
+                <CaretIcon /> Use an existing limited-access folder instead
+              </button>
+              {existingOpen && (
+                <div id="existing-folders" className="radio-detail">
+                  <p role="status">
+                    {limitedFolders.length === 0
+                      ? `No limited-access folders are available in ${parentName}.`
+                      : `Moving into an existing limited-access folder isn't available in this prototype.`}
+                  </p>
+                </div>
+              )}
+            </section>
+            <section className="setup-section" aria-labelledby="setup-people">
+              <h3 id="setup-people" className="section-label">
+                Who keeps access
+              </h3>
+              {keepPeople([
+                `Selected people keep access to ${short}.`,
+                'Unselected people lose access after confirmation.',
+              ])}
+              <p className="muted">
+                Selected teammates will receive access to the new folder. Access to the rest of {parentName} stays
+                unchanged.
+              </p>
+            </section>
+          </div>
+          <div className="dialog-footer">
+            <p className="footer-note">No changes applied yet.</p>
+            <div className="button-row">
+              <button type="button" className="btn btn-text" onClick={requestClose}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-filled" aria-disabled={!!nameError} onClick={reviewFromSetup}>
+                Review changes
+              </button>
+            </div>
+          </div>
+        </>
+      )
+      break
+    }
+
     case 'people': {
-      const targetKept = target ? !!keep[target] : false
-      const unintended = collaborators.filter((p) => p !== target && !keep[p])
       body = (
         <>
           {header(`Who can open ${short}?`)}
           <div className="dialog-body">
             <p>Choose who should keep access after this file moves.</p>
-            <fieldset className="check-group">
-              <legend className="visually-hidden">People who keep access to {short}</legend>
-              <ul className="explain-list" id="keep-meaning">
-                <li>
-                  <span aria-hidden="true">☑ </span>Selected people will keep access to {short}.
-                </li>
-                <li>
-                  <span aria-hidden="true">☐ </span>Unselected people will lose access to {short} after confirmation.
-                </li>
-              </ul>
-              <ul className="people-list">
-                {owners.map((p) => (
-                  <li key={p} className="person-row">
-                    <input type="checkbox" id={`keep-${p}`} checked disabled aria-describedby={`keep-${p}-desc`} />
-                    <Avatar id={p} />
-                    <label className="person-text" htmlFor={`keep-${p}`}>
-                      <span className="person-name">{personName(p)} — Owner</span>
-                      <span id={`keep-${p}-desc`} className="person-sub">
-                        <span aria-hidden="true">🔒 </span>Always keeps access
-                      </span>
-                    </label>
-                  </li>
-                ))}
-                {collaborators.map((p) => {
-                  const role = roleOf(scenario, fileId, p)
-                  const kept = !!keep[p]
-                  return (
-                    <li key={p} className="person-row">
-                      <input
-                        type="checkbox"
-                        id={`keep-${p}`}
-                        checked={kept}
-                        onChange={(e) => toggleKeep(p, e.target.checked)}
-                        aria-describedby={`keep-${p}-desc`}
-                      />
-                      <Avatar id={p} />
-                      <label className="person-text" htmlFor={`keep-${p}`}>
-                        <span className="person-name">
-                          {personName(p)} — {role}
-                        </span>
-                        <span id={`keep-${p}-desc`} className={`person-sub ${kept ? 'status-keep' : 'status-lose'}`}>
-                          {kept ? (
-                            <>
-                              <span aria-hidden="true">✓ </span>Keeps access as {role}
-                            </>
-                          ) : (
-                            <>
-                              <span aria-hidden="true">✕ </span>Will lose access to {short} after confirmation
-                            </>
-                          )}
-                        </span>
-                      </label>
-                    </li>
-                  )
-                })}
-              </ul>
-            </fieldset>
-            <div aria-live="polite">
-              {target && (
-                <div className={`callout ${targetKept ? 'callout-info' : 'callout-ok'}`}>
-                  {targetKept
-                    ? `${targetName} is selected, so ${targetName} will keep access to ${short}.`
-                    : `${targetName} will lose access to ${short} after confirmation.`}
-                </div>
-              )}
-              {unintended.length > 0 && (
-                <div className="callout callout-warn" role="note">
-                  <strong>
-                    <span aria-hidden="true">⚠ </span>
-                    {joinNames(unintended.map(personName))} will also lose access to {short}.
-                  </strong>{' '}
-                  Select them again if they should keep it.
-                </div>
-              )}
-            </div>
+            {keepPeople([
+              `Selected people will keep access to ${short}.`,
+              `Unselected people will lose access to ${short} after confirmation.`,
+            ])}
             <p className="muted">
               The people you select can open {short} with the same role they have now. Access to the rest of{' '}
               {getItem(scenario, fileParentId).name} doesn’t change.
@@ -802,7 +960,11 @@ export function ShareFlow({
             <p className="footer-note">Nothing has changed yet. Changes happen only after you confirm.</p>
           </div>
           <div className="dialog-footer">
-            <button type="button" className="btn btn-text" onClick={() => go('people')}>
+            <button
+              type="button"
+              className="btn btn-text"
+              onClick={() => go(restrictEntry === 'setup' ? 'setup' : 'people')}
+            >
               Back
             </button>
             <button type="button" className="btn btn-filled" onClick={confirmApply} disabled={!preview}>

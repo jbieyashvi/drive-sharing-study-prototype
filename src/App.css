@@ -1893,3 +1893,52 @@ fieldset {
   color: var(--text-2);
   word-break: break-word;
 }
+
+/* Version B combined setup screen */
+.setup-section {
+  display: grid;
+  gap: 10px;
+  justify-items: stretch;
+}
+
+.setup-section + .setup-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.disclosure {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--blue);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.disclosure:hover {
+  background: #f3f6fc;
+}
+
+.disclosure svg {
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+
+.disclosure[aria-expanded='true'] svg {
+  transform: none;
+}
+
+.setup-section .radio-detail {
+  margin-left: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disclosure svg {
+    transition: none;
+  }
+}

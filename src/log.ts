@@ -12,6 +12,9 @@ export type EventType =
   | 'file_open_attempt'
   | 'facilitator'
 
+/** Study variant: A is the original multi-step flow, B the shorter role-menu flow. */
+export type Variant = 'A' | 'B'
+
 export interface LogEntry {
   seq: number
   /** Milliseconds since session start (or last reset). Prototype timing only. */
@@ -20,6 +23,7 @@ export interface LogEntry {
   detail: string
   viewer: string
   mode: 'participant' | 'facilitator'
+  variant: Variant
 }
 
 export type LogFn = (type: EventType, detail: string) => void

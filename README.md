@@ -27,7 +27,7 @@ The port is fixed at 5317 (`strictPort`) so the study URL never changes. Other c
 
 ## Scenario
 
-`My Drive › Client Project` holds **File A.png** and **File B.png**. Both files get their access from the project folder:
+`My Drive › Client Project` holds six files: **File A.png**, **File B.png**, **Project brief.pdf**, **Timeline.xlsx**, **Meeting notes.docx** and **Final presentation.pptx**. All six get their access from the project folder:
 
 | Person | Client Project |
 | --- | --- |
@@ -36,13 +36,15 @@ The port is fixed at 5317 (`strictPort`) so the study URL never changes. Other c
 | Ravi | Viewer |
 | Alex | Editor |
 
-Task: Alex should lose access to File A, keep access to the project and File B, and nobody else's access should change.
+Task: Alex should lose access to File A, keep access to the project and the other five files, and nobody else's access should change.
+
+Only **File A** supports the restrict and restore flows. The other five files open a sample preview (an image placeholder for File B, a placeholder page for the documents) and show who has access in their Share dialog. That dialog is read-only: roles appear as plain text, and a note says sharing for this file can't be changed in this prototype. There is no role menu and no Add people button there, so there are no controls that silently do nothing. Which files support the flows is set by a `study` flag on the item in `src/model.ts`, not by checks on IDs or names in the UI code.
 
 ## Flow
 
 1. Open the ⋮ menu for File A and choose **Share**. Next to Alex, the dialog says "Access comes from Client Project."
 2. Open Alex's role menu and choose **Remove access**. This opens **Change Alex's access**, which offers two choices:
-   - **Remove access to the project.** A review screen lists everything Alex would lose (the project, File A and File B). You must confirm it explicitly.
+   - **Remove access to the project.** A review screen lists everything Alex would lose (the project and all six files). You must confirm it explicitly.
    - **Keep project access, restrict this file.** This starts the steps below.
 3. **Choose a folder for File A.** Nothing is selected by default. Choosing an existing limited-access folder isn't supported, so that option sends you to **Create a new folder**. The name defaults to "Private files". Empty names and duplicate names (ignoring case) are rejected.
 4. **Who can open File A?** You is locked in. Maya and Ravi are selected and Alex is not. If you reselect Alex, the screen says Alex will keep access.
@@ -72,7 +74,7 @@ One participant found Version A long and suggested putting a restrict action in 
 
 ## Scenario 2: restore access to one private file
 
-Facilitator-only, for isolated testing. The same Add people flow also works on any file in the restrict scenario, including File A after it has been restricted. Open http://localhost:5317/?mode=facilitator&scenario=restore, or choose **Scenario → Restore access to one private file** in the facilitator drawer. If a share flow is open, the drawer asks before switching and discarding its unapplied choices. Switching restarts both versions (A and B) from that scenario. Without `scenario=restore` the original restrict task loads.
+Facilitator-only, for isolated testing. The same Add people flow also works on File A in the restrict scenario, including after it has been restricted. Open http://localhost:5317/?mode=facilitator&scenario=restore, or choose **Scenario → Restore access to one private file** in the facilitator drawer. If a share flow is open, the drawer asks before switching and discarding its unapplied choices. Switching restarts both versions (A and B) from that scenario. Without `scenario=restore` the original restrict task loads.
 
 `Client Project` holds **File B.png** and the limited-access folder **Private files**, which holds **File A.png** and **File C.png**:
 
@@ -83,7 +85,7 @@ Facilitator-only, for isolated testing. The same Add people flow also works on a
 | Ravi | Viewer | Viewer |
 | Alex | Editor | No access |
 
-Task: Alex should be able to open File C as Viewer. Nothing else should change: not the folder, not File A, and nobody else's access.
+Task: Alex should be able to open File C as Viewer. Nothing else should change: not the folder, not File A, and nobody else's access. File A and File C support Add people here. File B's Share dialog is read-only.
 
 1. Open **Private files**, then File C's ⋮ menu → **Share**, then **Add people…**. The screen says "This shares File C only. It does not share the Private files folder or the other files inside it."
 2. Type a name or email and pick Maya, Ravi or Alex from the list. Arrow keys, Enter and Escape work in the list. Role defaults to **Viewer** (Viewer, Commenter or Editor). Picking a person or role changes nothing.
@@ -130,7 +132,8 @@ Access works as follows. An item's access is the most permissive grant found by 
 
 - There are two scenarios (restrict one file, restore one private file). There are no groups, link sharing, domain or Workspace admin policies, or ownership transfer.
 - Changing an existing person's role (Viewer ↔ Editor) is not implemented. Only **Remove access** works, plus **Restrict access to this file…** in Version B.
-- **Add people** works for any file in both scenarios and both versions, one study person at a time. For example, after restricting File A you can share File A back with Alex, and the new limited-access folder stays blocked. Folder sharing is never available.
+- **Add people**, **Remove access** and **Restrict** work only on study files: File A in the restrict scenario, and File A and File C in the restore scenario. They work in both versions, one study person at a time. For example, after restricting File A you can share File A back with Alex, and the new limited-access folder stays blocked. Every other file has a read-only Share dialog. Folder sharing is never available.
+- The non-image files (PDF, spreadsheet, document, slides) are placeholders. Their previews are generic pages with grey lines and no real content, and their type icons are generic coloured pages with a letter, not product icons.
 - *Copy file link* copies a placeholder `https://example.com/study-file/…` URL. It isn't a working link.
 - Version B has not been tested with participants. Comparing A and B needs a proper study, and step or click counts alone don't measure usability.
 - Moving into an *existing* limited-access folder is always unavailable, even after one has been created.

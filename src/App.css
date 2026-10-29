@@ -2096,3 +2096,66 @@ fieldset {
 .image-preview.file-c {
   background: linear-gradient(135deg, #a142f4, #4285f4);
 }
+
+/* ---------- Non-image sample files (generic type colours, not product icons) ---------- */
+
+.card-thumb.kind-pdf,
+.details-preview.kind-pdf {
+  background: #fce8e6;
+}
+.card-thumb.kind-sheet,
+.details-preview.kind-sheet {
+  background: #e6f4ea;
+}
+.card-thumb.kind-doc,
+.details-preview.kind-doc {
+  background: #e8f0fe;
+}
+.card-thumb.kind-slides,
+.details-preview.kind-slides {
+  background: #fef7e0;
+}
+
+.doc-preview {
+  height: 320px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #f0f4f9;
+}
+
+.doc-page {
+  width: 240px;
+  height: 290px;
+  padding: 20px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.3);
+  font-size: 13px;
+}
+
+.doc-preview.kind-slides .doc-page {
+  width: 360px;
+  height: 220px;
+}
+
+.doc-note {
+  color: var(--text-2);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.doc-line {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: #e3e3e3;
+}
+
+.share-banner.read-only {
+  margin-bottom: 16px;
+}

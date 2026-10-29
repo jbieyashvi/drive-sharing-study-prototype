@@ -25,6 +25,44 @@ describe('initial scenario', () => {
     expect(roleOf(s, 'file-a', 'ravi')).toBe('Viewer')
     expect(roleOf(s, 'file-a', 'alex')).toBe('Editor')
   })
+
+  const OTHER_FILES = ['file-b', 'brief', 'timeline', 'notes', 'deck']
+
+  it('holds six project files, all inheriting, with only File A in the study flows', () => {
+    const s = initialScenario()
+    const files = s.items.filter((i) => i.kind === 'file')
+    expect(files.map((f) => f.name)).toEqual([
+      'File A.png',
+      'File B.png',
+      'Project brief.pdf',
+      'Timeline.xlsx',
+      'Meeting notes.docx',
+      'Final presentation.pptx',
+    ])
+    for (const f of files) {
+      expect(f.parentId).toBe(PROJECT_ID)
+      expect(f.inherits).toBe(true)
+      expect(f.grants).toEqual({})
+    }
+    expect(files.filter((f) => f.study).map((f) => f.id)).toEqual(['file-a'])
+  })
+
+  it('restricting File A leaves the other five files and the project unchanged, and restore keeps the folder blocked', () => {
+    const s = initialScenario()
+    const restricted = applyRestrict(s, { fileId: 'file-a', folderName: 'Private files', keep: ['maya', 'ravi'] }).scenario
+    const folderId = getItem(restricted, 'file-a').parentId!
+    const restored = applyShareFile(restricted, 'file-a', 'alex', 'Viewer').scenario
+    for (const after of [restricted, restored]) {
+      for (const id of [PROJECT_ID, ...OTHER_FILES]) {
+        expect(getItem(after, id)).toEqual(getItem(s, id))
+        for (const p of PEOPLE) expect(roleOf(after, id, p.id)).toBe(roleOf(s, id, p.id))
+      }
+    }
+    expect(roleOf(restricted, 'file-a', 'alex')).toBeNull()
+    expect(roleOf(restored, 'file-a', 'alex')).toBe('Viewer')
+    expect(canOpen(restored, folderId, 'alex')).toBe(false)
+    expect(getItem(restored, folderId).grants.alex).toBeUndefined()
+  })
 })
 
 describe('restrict branch', () => {
@@ -52,7 +90,7 @@ describe('restrict branch', () => {
 
   it('does not mutate the input scenario', () => {
     expect(getItem(s, 'file-a').parentId).toBe(PROJECT_ID)
-    expect(s.items).toHaveLength(4)
+    expect(s.items).toHaveLength(8)
   })
 
   it('keeps Alex when reselected', () => {
@@ -76,10 +114,12 @@ describe('restrict branch', () => {
 })
 
 describe('project removal branch', () => {
-  it('removes Alex from the project and both files', () => {
+  it('removes Alex from the project and every file in it', () => {
     const s = initialScenario()
     const { scenario: after } = applyRemoveFromFolder(s, PROJECT_ID, 'alex')
-    expect(lostAccess(s, after, PROJECT_ID, 'alex').map((i) => i.id)).toEqual([PROJECT_ID, 'file-a', 'file-b'])
+    expect(lostAccess(s, after, PROJECT_ID, 'alex').map((i) => i.id).sort()).toEqual(
+      [PROJECT_ID, 'file-a', 'file-b', 'brief', 'timeline', 'notes', 'deck'].sort(),
+    )
     expect(roleOf(after, 'file-a', 'maya')).toBe('Editor')
   })
 })

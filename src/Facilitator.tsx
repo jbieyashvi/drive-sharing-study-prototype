@@ -157,7 +157,7 @@ export function Facilitator({
           <p className="panel-note">
             {scenarioId === 'restore'
               ? 'Client Project holds File B and the limited-access folder Private files (File A, File C). Alex can’t open Private files. Task: share only File C with Alex.'
-              : 'Client Project holds File A and File B. Task: Alex loses File A, keeps the project.'}{' '}
+              : 'Client Project holds six files (File A, File B, Project brief, Timeline, Meeting notes, Final presentation). Task: Alex loses File A only and keeps the project and the other five files.'}{' '}
             Switching restarts both versions from this scenario. Participants never see which one is selected.
           </p>
           {confirmReset ? (

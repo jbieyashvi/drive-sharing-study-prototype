@@ -7,7 +7,7 @@ import {
   CloseIcon,
   FolderIcon,
   HelpIcon,
-  ImageIcon,
+  FileIcon,
   InfoIcon,
   LimitedFolderIcon,
   LinkIcon,
@@ -454,7 +454,7 @@ export function ShareFlow({
 
   const fileChip = (
     <span className="file-chip">
-      <ImageIcon size={18} />
+      <FileIcon name={file.name} size={18} />
       <span>{file.name}</span>
     </span>
   )
@@ -560,6 +560,8 @@ export function ShareFlow({
     case 'share': {
       const people = peopleWithAccess(scenario, fileId)
       const parent = getItem(scenario, file.parentId!)
+      // Only study files support the restrict and restore flows; the rest show their sharing read-only.
+      const editable = !!file.study
       body = (
         <>
           <div className="dialog-header share-header">
@@ -593,9 +595,16 @@ export function ShareFlow({
                 </span>
               </div>
             )}
-            <button type="button" className="add-people" data-autofocus={backFromAdd || undefined} onClick={startAdd}>
-              Add people, groups, spaces, and calendar events
-            </button>
+            {editable ? (
+              <button type="button" className="add-people" data-autofocus={backFromAdd || undefined} onClick={startAdd}>
+                Add people, groups, spaces, and calendar events
+              </button>
+            ) : (
+              <div className="share-banner read-only" role="note">
+                <InfoIcon size={20} />
+                <span>Sharing for this file can’t be changed in this prototype. You can view who has access.</span>
+              </div>
+            )}
             <h3 className="section-label">People with access</h3>
             <ul className="people-list">
               {people.map((p) => {
@@ -638,8 +647,8 @@ export function ShareFlow({
                         </span>
                       )}
                     </div>
-                    {a.role === 'Owner' ? (
-                      <span className="role-static">Owner</span>
+                    {a.role === 'Owner' || !editable ? (
+                      <span className="role-static">{a.role}</span>
                     ) : (
                       <Menu
                         label={`${personName(p)}'s role: ${a.role}`}

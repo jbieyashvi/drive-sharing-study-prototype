@@ -188,6 +188,43 @@ export const ImageIcon = ({ size = 24 }: P) =>
     </>,
   )
 
+export type FileKind = 'image' | 'pdf' | 'sheet' | 'doc' | 'slides'
+
+const KINDS: Record<string, FileKind> = { pdf: 'pdf', xlsx: 'sheet', docx: 'doc', pptx: 'slides' }
+export const fileKind = (name: string): FileKind => KINDS[name.split('.').pop()!.toLowerCase()] ?? 'image'
+
+/** Generic page glyph with a letter, coloured by type. Not a product icon. */
+const DOC_GLYPHS: Record<Exclude<FileKind, 'image'>, { fill: string; letter: string }> = {
+  pdf: { fill: '#d93025', letter: 'P' },
+  sheet: { fill: '#188038', letter: 'X' },
+  doc: { fill: '#1a73e8', letter: 'W' },
+  slides: { fill: '#e37400', letter: 'S' },
+}
+
+export const FileIcon = ({ name, size = 24 }: P & { name: string }) => {
+  const kind = fileKind(name)
+  if (kind === 'image') return <ImageIcon size={size} />
+  const { fill, letter } = DOC_GLYPHS[kind]
+  return svg(
+    size,
+    <>
+      <path fill={fill} d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+      <path fill="#fff" opacity=".45" d="M14 2l5 5h-5z" />
+      <text
+        x="11.5"
+        y="17.5"
+        textAnchor="middle"
+        fontSize="8.5"
+        fontWeight="700"
+        fill="#fff"
+        fontFamily="Arial, sans-serif"
+      >
+        {letter}
+      </text>
+    </>,
+  )
+}
+
 export const BrandMark = ({ size = 40 }: P) =>
   svg(
     size,

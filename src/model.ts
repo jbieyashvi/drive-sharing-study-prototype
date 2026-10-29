@@ -30,6 +30,8 @@ export interface Item {
   /** false = limited access: grants from the parent do not flow down. */
   inherits: boolean
   grants: Partial<Record<PersonId, Role>>
+  /** Supports the experimental restrict and restore flows. Other files show their sharing read-only. */
+  study?: boolean
 }
 
 export interface Scenario {
@@ -57,8 +59,12 @@ export function initialScenario(): Scenario {
         inherits: true,
         grants: { maya: 'Editor', ravi: 'Viewer', alex: 'Editor' },
       },
-      { id: 'file-a', name: 'File A.png', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
+      { id: 'file-a', name: 'File A.png', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {}, study: true },
       { id: 'file-b', name: 'File B.png', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
+      { id: 'brief', name: 'Project brief.pdf', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
+      { id: 'timeline', name: 'Timeline.xlsx', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
+      { id: 'notes', name: 'Meeting notes.docx', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
+      { id: 'deck', name: 'Final presentation.pptx', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
     ],
   }
 }
@@ -88,8 +94,8 @@ export function restoreScenario(): Scenario {
         inherits: false,
         grants: { you: 'Owner', maya: 'Editor', ravi: 'Viewer' },
       },
-      { id: 'file-a', name: 'File A.png', kind: 'file', parentId: PRIVATE_ID, inherits: true, grants: {} },
-      { id: 'file-c', name: 'File C.png', kind: 'file', parentId: PRIVATE_ID, inherits: true, grants: {} },
+      { id: 'file-a', name: 'File A.png', kind: 'file', parentId: PRIVATE_ID, inherits: true, grants: {}, study: true },
+      { id: 'file-c', name: 'File C.png', kind: 'file', parentId: PRIVATE_ID, inherits: true, grants: {}, study: true },
       { id: 'file-b', name: 'File B.png', kind: 'file', parentId: PROJECT_ID, inherits: true, grants: {} },
     ],
   }

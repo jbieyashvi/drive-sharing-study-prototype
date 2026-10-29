@@ -23,7 +23,8 @@ import {
   GridIcon,
   HelpIcon,
   HomeIcon,
-  ImageIcon,
+  FileIcon,
+  fileKind,
   InfoIcon,
   LimitedFolderIcon,
   LinkIcon,
@@ -108,6 +109,10 @@ const SIZES: Record<string, string> = {
   'file-a': '1.2 MB',
   'file-b': '864 KB',
   'file-c': '2.1 MB',
+  brief: '412 KB',
+  timeline: '38 KB',
+  notes: '27 KB',
+  deck: '5.4 MB',
 }
 const sizeOf = (item: Item) => (item.kind === 'folder' ? '—' : (SIZES[item.id] ?? '—'))
 const MODIFIED = 'Oct 29, 2026'
@@ -136,7 +141,7 @@ const MOCK_SECTIONS: Record<Exclude<Section, 'drive'>, { title: string; empty: s
 
 const itemIcon = (item: Item, size = 24) =>
   item.kind === 'file' ? (
-    <ImageIcon size={size} />
+    <FileIcon name={item.name} size={size} />
   ) : isLimited(item) ? (
     <LimitedFolderIcon size={size} />
   ) : (
@@ -735,8 +740,8 @@ export default function App() {
                   <Menu label={`More actions for ${item.name}`} button={<DotsIcon />} items={rowMenu(item)} />
                 </div>
                 {item.kind === 'file' && (
-                  <div className={`card-thumb ${item.id}`} aria-hidden="true">
-                    <ImageIcon size={48} />
+                  <div className={`card-thumb ${item.id} kind-${fileKind(item.name)}`} aria-hidden="true">
+                    <FileIcon name={item.name} size={48} />
                   </div>
                 )}
                 {item.kind === 'file' && (
@@ -1065,7 +1070,10 @@ function DetailsPane({
         <p className="muted details-empty">Select a file or folder to see its details.</p>
       ) : (
         <div className="details-body">
-          <div className={`details-preview ${item.kind === 'file' ? item.id : ''}`} aria-hidden="true">
+          <div
+            className={`details-preview ${item.kind === 'file' ? `${item.id} kind-${fileKind(item.name)}` : ''}`}
+            aria-hidden="true"
+          >
             {itemIcon(item, 56)}
           </div>
           <h3>Who has access</h3>
@@ -1162,9 +1170,26 @@ function OpenResult({
       <div className="dialog-body">
         {ok ? (
           <>
-            <div className={`image-preview ${item.id}`} role="img" aria-label={`Sample preview of ${item.name}`}>
-              <span>{item.name}</span>
-            </div>
+            {fileKind(item.name) === 'image' ? (
+              <div className={`image-preview ${item.id}`} role="img" aria-label={`Sample preview of ${item.name}`}>
+                <span>{item.name}</span>
+              </div>
+            ) : (
+              <div
+                className={`doc-preview kind-${fileKind(item.name)}`}
+                role="img"
+                aria-label={`Sample preview of ${item.name}`}
+              >
+                <div className="doc-page">
+                  <FileIcon name={item.name} size={32} />
+                  <strong>{item.name}</strong>
+                  <span className="doc-note">Sample preview · placeholder content</span>
+                  {[92, 80, 86, 64, 74, 50].map((w, i) => (
+                    <span key={i} className="doc-line" style={{ width: `${w}%` }} />
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="muted">
               Opened as {personName(viewer)} · {role}
             </p>

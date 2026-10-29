@@ -57,10 +57,12 @@ One participant found Version A long and suggested putting a restrict action in 
 
 - **Entry point.** Alex's role menu in File A's Share dialog lists Viewer, Commenter and Editor, then a divider, then **Restrict access to this file…** and a separate **Remove access…**. Restrict is not a role and changes nothing by itself. It skips A's decision screen and opens a single setup screen. Remove access works the same way as in A.
 - **Setup: "Restrict access to File A."**
-  - Destination: shows the current location and says the file moves to a new limited-access folder in Client Project. The folder name is editable, defaults to "Private files" and is checked the same way as in A.
+  - Planned-access summary: sits just below the title, outside the scrolling area, so it is always visible. It is built from the current selections, for example "✕ Alex will lose access to File A. ✓ Maya and Ravi will keep access. = Access to the rest of Client Project stays unchanged." If everyone is selected it says "Everyone will keep access to File A." It describes planned changes only, and screen readers announce it politely when it changes.
+  - Destination (compact): "Move File A.png into a new limited-access folder", then "Inside: Client Project", then an inline **Folder name** field. The name defaults to "Private files" and is checked the same way as in A.
   - An optional, collapsed **Use an existing limited-access folder instead** shows the same empty state as A.
-  - Who keeps access: uses the same checkboxes and warnings as A, with B's wording.
+  - Who keeps access: uses the same checkboxes, roles and per-person status as A. B's summary replaces A's ☑/☐ explainer and callouts.
   - The footer says "No changes applied yet." and has **Cancel** and **Review changes**.
+  - At 1280×720 the summary and all four people are visible when the screen opens; only the last helper line needs a short scroll. At 1440×900 nothing scrolls.
 - **After setup.** Review, applying, the result, and the failure/Retry handling are the same screens as in A, and they are built from B's selections. Back from review returns to setup with everything kept. Cancel and Escape use the same discard confirmation as A.
 - **Isolation.**
   - Each version keeps its own scenario state. The facilitator drawer shows the active version and can switch it. Switching closes any open flow and discards unapplied choices.

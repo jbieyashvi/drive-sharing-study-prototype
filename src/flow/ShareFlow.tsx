@@ -315,23 +315,26 @@ export function ShareFlow({
   )
 
   // Who-keeps-access checklist, shared by Version A's people step and Version B's setup.
-  const keepPeople = (explain: [string, string]) => {
+  /** People checkboxes. Without `explain`, the legend list and callouts are left to the caller (Version B's summary). */
+  const keepPeople = (explain?: [string, string]) => {
     const targetKept = target ? !!keep[target] : false
     const unintended = collaborators.filter((p) => p !== target && !keep[p])
     return (
       <>
         <fieldset className="check-group">
           <legend className="visually-hidden">People who keep access to {short}</legend>
-          <ul className="explain-list" id="keep-meaning">
-            <li>
-              <span aria-hidden="true">☑ </span>
-              {explain[0]}
-            </li>
-            <li>
-              <span aria-hidden="true">☐ </span>
-              {explain[1]}
-            </li>
-          </ul>
+          {explain && (
+            <ul className="explain-list" id="keep-meaning">
+              <li>
+                <span aria-hidden="true">☑ </span>
+                {explain[0]}
+              </li>
+              <li>
+                <span aria-hidden="true">☐ </span>
+                {explain[1]}
+              </li>
+            </ul>
+          )}
           <ul className="people-list">
             {owners.map((p) => (
               <li key={p} className="person-row">
@@ -379,24 +382,26 @@ export function ShareFlow({
             })}
           </ul>
         </fieldset>
-        <div aria-live="polite">
-          {target && (
-            <div className={`callout ${targetKept ? 'callout-info' : 'callout-ok'}`}>
-              {targetKept
-                ? `${targetName} is selected, so ${targetName} will keep access to ${short}.`
-                : `${targetName} will lose access to ${short} after confirmation.`}
-            </div>
-          )}
-          {unintended.length > 0 && (
-            <div className="callout callout-warn" role="note">
-              <strong>
-                <span aria-hidden="true">⚠ </span>
-                {joinNames(unintended.map(personName))} will also lose access to {short}.
-              </strong>{' '}
-              Select them again if they should keep it.
-            </div>
-          )}
-        </div>
+        {explain && (
+          <div aria-live="polite">
+            {target && (
+              <div className={`callout ${targetKept ? 'callout-info' : 'callout-ok'}`}>
+                {targetKept
+                  ? `${targetName} is selected, so ${targetName} will keep access to ${short}.`
+                  : `${targetName} will lose access to ${short} after confirmation.`}
+              </div>
+            )}
+            {unintended.length > 0 && (
+              <div className="callout callout-warn" role="note">
+                <strong>
+                  <span aria-hidden="true">⚠ </span>
+                  {joinNames(unintended.map(personName))} will also lose access to {short}.
+                </strong>{' '}
+                Select them again if they should keep it.
+              </div>
+            )}
+          </div>
+        )}
       </>
     )
   }
@@ -744,53 +749,67 @@ export function ShareFlow({
 
     case 'setup': {
       const parentName = getItem(scenario, fileParentId).name
+      // Planned outcome of the current selections; nothing here is applied until confirmation.
+      const losers = collaborators.filter((p) => !keep[p])
+      const otherKeepers = collaborators.filter((p) => p !== target && keep[p])
+      const summary: { tone: 'keep' | 'lose' | 'same'; text: string }[] = []
+      if (losers.length === 0) {
+        summary.push({ tone: 'keep', text: `Everyone will keep access to ${short}.` })
+      } else {
+        if (target && keep[target]) summary.push({ tone: 'keep', text: `${targetName} will keep access to ${short}.` })
+        summary.push({ tone: 'lose', text: `${joinNames(losers.map(personName))} will lose access to ${short}.` })
+        if (otherKeepers.length > 0)
+          summary.push({ tone: 'keep', text: `${joinNames(otherKeepers.map(personName))} will keep access.` })
+      }
+      summary.push({ tone: 'same', text: `Access to the rest of ${parentName} stays unchanged.` })
+      const summaryIcon = { keep: '✓', lose: '✕', same: '=' }
       body = (
         <>
           {header(`Restrict access to ${short}`)}
+          <section className="access-summary" aria-labelledby="setup-summary">
+            <h3 id="setup-summary" className="visually-hidden">
+              Planned access after you confirm
+            </h3>
+            <ul aria-live="polite" aria-atomic="true">
+              {summary.map((s) => (
+                <li key={s.text}>
+                  <span aria-hidden="true" className={`summary-icon status-${s.tone}`}>
+                    {summaryIcon[s.tone]}
+                  </span>
+                  {s.text}
+                </li>
+              ))}
+            </ul>
+          </section>
           <div className="dialog-body">
-            <p>Keep the project shared and choose who can open this file.</p>
             <section className="setup-section" aria-labelledby="setup-dest">
               <h3 id="setup-dest" className="section-label">
-                Destination
+                Move {file.name} into a new limited-access folder
               </h3>
-              <dl className="facts">
-                <div>
-                  <dt>File</dt>
-                  <dd>{fileChip}</dd>
-                </div>
-                <div>
-                  <dt>Current location</dt>
-                  <dd>{displayPath(scenario, fileParentId)}</dd>
-                </div>
-                <div>
-                  <dt>Moves to</dt>
-                  <dd>
-                    <LimitedFolderIcon size={16} /> A new limited-access folder in {parentName}
-                  </dd>
-                </div>
-              </dl>
-              <label className="field-label" htmlFor="folder-name">
-                Folder name
-              </label>
-              <input
-                id="folder-name"
-                ref={nameInput}
-                className={`text-input ${nameError ? 'invalid' : ''}`}
-                value={folderName}
-                onChange={(e) => setFolderName(e.target.value)}
-                aria-invalid={!!nameError}
-                aria-describedby={nameError ? 'folder-name-error' : 'folder-location'}
-                onKeyDown={(e) => e.key === 'Enter' && reviewFromSetup()}
-              />
+              <p id="folder-location" className="muted">
+                Inside: {displayPath(scenario, fileParentId)}
+              </p>
+              <div className="inline-field">
+                <label className="field-label" htmlFor="folder-name">
+                  Folder name
+                </label>
+                <input
+                  id="folder-name"
+                  ref={nameInput}
+                  className={`text-input ${nameError ? 'invalid' : ''}`}
+                  value={folderName}
+                  onChange={(e) => setFolderName(e.target.value)}
+                  aria-invalid={!!nameError}
+                  aria-describedby={nameError ? 'folder-name-error folder-location' : 'folder-location'}
+                  onKeyDown={(e) => e.key === 'Enter' && reviewFromSetup()}
+                />
+              </div>
               {nameError && (
                 <p id="folder-name-error" className="field-error" role="alert">
                   <span aria-hidden="true">⚠ </span>
                   {nameError}
                 </p>
               )}
-              <p id="folder-location" className="muted">
-                Location: {displayPath(scenario, fileParentId)}
-              </p>
               <button
                 type="button"
                 className="disclosure"
@@ -817,14 +836,8 @@ export function ShareFlow({
               <h3 id="setup-people" className="section-label">
                 Who keeps access
               </h3>
-              {keepPeople([
-                `Selected people keep access to ${short}.`,
-                'Unselected people lose access after confirmation.',
-              ])}
-              <p className="muted">
-                Selected teammates will receive access to the new folder. Access to the rest of {parentName} stays
-                unchanged.
-              </p>
+              {keepPeople()}
+              <p className="muted">Selected teammates will receive access to the new folder.</p>
             </section>
           </div>
           <div className="dialog-footer">

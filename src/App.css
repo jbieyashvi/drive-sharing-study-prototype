@@ -1897,12 +1897,12 @@ fieldset {
 /* Version B combined setup screen */
 .setup-section {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   justify-items: stretch;
 }
 
 .setup-section + .setup-section {
-  padding-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid var(--line);
 }
 
@@ -1941,4 +1941,44 @@ fieldset {
   .disclosure svg {
     transition: none;
   }
+}
+
+/* Version B setup: planned-access summary sits outside the scrolling body so it stays visible. */
+.access-summary {
+  flex: none;
+  margin: 4px 24px 4px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: #f3f6fc;
+}
+
+.access-summary ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.access-summary li {
+  display: flex;
+  gap: 8px;
+}
+
+.summary-icon {
+  flex: none;
+  width: 1em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.status-same {
+  color: var(--muted);
+}
+
+.inline-field {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 12px;
 }
